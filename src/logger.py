@@ -1,9 +1,15 @@
+"""
+日志模块
+作用就是用来记录脚本的运行日志
+
+"""
+
 import logging
 from pathlib import Path
 
 def setup_logging():
     # 使用pathlib准备日志文件夹
-    log_dir = Path.cwd() / "logs"
+    log_dir = Path.cwd() / "logs" # 在哪里执行脚本就在那个脚本下生成一个logs日志
     log_dir.mkdir(exist_ok=True) #不存在则创建一个
     log_file = log_dir / "automation.log"
 

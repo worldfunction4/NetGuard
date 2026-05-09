@@ -1,3 +1,11 @@
+"""
+读取 Excel 文件，获取设备信息，返回设备列表
+Excel 文件的格式需要满足以下要求：
+1. 第一行是表头，列名为：name, ip, username, password, device_type, status
+2. 第二行开始是设备信息，每行对应一个设备，列顺序为：name, ip, username, password, device_type, status
+
+"""
+
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 from .logger import logger
@@ -10,20 +18,24 @@ def get_device_data(file_path):
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
         # min_row=2：从第 2 行开始扫描，避开第一行的表头
-        # values_only=True：直接拿格心里的值，不要格子对象本身
+        # values_only=True：直接拿格里的值，而不要格子对象本身
         for row in sheet.iter_rows(min_row=2, values_only=True):
             # 考虑到整行都是空的情况
             if not any(row):
                 continue
 
-            # 利用“解包”技术，把这一行的三列数据分别赋值给三个变量
-            name, ip, status = row
+            # 利用解包技术，把这一行的六列数据分别赋值给六个变量
+            # Excel 列顺序：name, ip, username, password, device_type, status
+            name, ip, username, password, device_type, status = row[:6]
 
             # 将设备信息打包成字典
             device_info = {
-            "name":name,
-            "ip":ip,
-            "status":status,
+                "name": name,
+                "ip": ip,
+                "username": username,
+                "password": password,
+                "device_type": device_type,
+                "status": status,
             }
 
             # 将字典内容装入devices
