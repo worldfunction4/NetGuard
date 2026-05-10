@@ -12,8 +12,8 @@ from src.logger import logger
 # netmiko 未安装时提供占位异常，保证模块可正常导入
 try:
     from netmiko.exceptions import (
-        NetmikoTimeoutException,
-        NetmikoAuthenticationException,
+        NetmikoTimeoutException, # type: ignore
+        NetmikoAuthenticationException, # type: ignore
     )
 except ImportError:
     class NetmikoTimeoutException(Exception):
