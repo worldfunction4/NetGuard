@@ -35,15 +35,6 @@ class DingTalkNotifier:
         if not self._enabled:
             return None, None
 
-        # TODO(human): 实现 HMAC-SHA256 加签
-        # 步骤：
-        # 1. timestamp = str(round(time.time() * 1000))  → 毫秒级时间戳
-        # 2. 拼接签名字符串: f"{timestamp}\n{self.secret}"
-        # 3. 用 hmac.new() 生成签名:
-        #    hmac.new(self.secret.encode('utf-8'), string_to_sign.encode('utf-8'), hashlib.sha256).digest()
-        # 4. base64.b64encode(hmac_code).decode('utf-8')  → 转为字符串
-        # 5. 对 sign 做 URL 编码: urllib.parse.quote(sign)
-        # 6. return timestamp, sign
         timestamp = str(round(time.time() * 1000))
         string_to_sign = f"{timestamp}\n{self.secret}"
         hmac_code = hmac.new(self.secret.encode('utf-8'), string_to_sign.encode('utf-8'), hashlib.sha256).digest()
