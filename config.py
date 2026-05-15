@@ -3,6 +3,7 @@ NetGuard 全局配置常量
 - 多厂商命令映射
 - 并发参数
 - 重试参数
+
 """
 COMMAND_MAP = {
     "huawei": "display current-configuration",

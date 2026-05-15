@@ -1,5 +1,5 @@
 """
-目标是把backup_configs文件夹里面最后两个备份进行对比（暂时采用文本格式），目前有两个测试txt
+目标是把backup_configs文件夹里面最后两个备份进行对比（改用HTML格式），目前有两个测试txt
 1 获取backup_configs文件夹位置并读取路径
 1.1 添加命令行一次性读取两个文件？表现为 
 2.将Path对象进行转化成文件
@@ -23,7 +23,7 @@ def read_to_compare(file1, file2):
             lines1= file1.readlines()
             lines2= file2.readlines()
     except FileNotFoundError as e:
-        logger.error(f"文件未找到: {e}")
+        logger.error(f"{path1}\n{path2}\n文件未找到: {e}")
         lines1 = []
         lines2 = []
     except Exception as e:
@@ -32,14 +32,22 @@ def read_to_compare(file1, file2):
         lines1 = []
         lines2 = []
 
-
-    diff = df.unified_diff(
-        lines1, lines2, fromfile=str(path2), tofile=str(path1)
+    # 进行初始化
+    diff = df.HtmlDiff()
+    diff_conext = diff.make_file(
+        lines1, lines2, fromdesc=str(path1), todesc=str(path2)
     )
-    # 接下来打印报告
-    print("文本格式差异报告：")
-    print("".join(diff))
-
+    
+        # 选择将html文件保存在logs内
+    try:
+        path = Path(__file__).parent.parent / "logs" / "compare_config.html"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(diff_conext)
+    # 文件不存在
+    except FileNotFoundError as no:
+        logger.error(f"文件不存在：{no}")
+    except Exception as e:
+        logger.error(f"未知错误{e}")
 
 if __name__ == "__main__":
     file1= input("请输入最新的文件名：")
