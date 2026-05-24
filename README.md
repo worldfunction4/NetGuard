@@ -40,6 +40,29 @@ python main.py diff         # 生成差异报告
 python main.py inspect      # 执行巡检
 ```
 
+### Docker 方式（无需安装 Python 环境）
+
+```bash
+# 构建镜像
+docker compose build
+
+# 复制示例配置
+copy devices.example.yaml devices.yaml
+
+# 一键演示（mock 模式默认开启）
+docker compose run --rm netguard run
+docker compose run --rm netguard diff
+docker compose run --rm netguard inspect
+
+# 交互式添加设备
+docker compose run --rm netguard device add
+
+# 产出文件在本地目录，直接用浏览器打开
+start reports\*.html
+```
+
+> 真实设备连接时，在 `docker-compose.yml` 中去掉 `NETGUARD_MOCK=1` 环境变量，并确保容器能访问设备 IP（默认 bridge 网络通常可以）。
+
 ## 命令参考
 
 ```

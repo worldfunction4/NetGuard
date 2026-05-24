@@ -1,0 +1,18 @@
+services:
+  netguard:
+    build: .
+    image: netguard:latest
+    # CLI 工具不使用常驻进程——每次 docker compose run 执行一个子命令后退出
+    # 挂载配置文件（只读）和运行时输出目录（可写）
+    volumes:
+      - ./devices.yaml:/app/devices.yaml:ro
+      - ./.env:/app/.env:ro
+      - ./backups_config:/app/backups_config
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+    # Mock 模式默认开启——首次跑不需要任何设备
+    environment:
+      - NETGUARD_MOCK=1
+    # 伪终端，让交互式输入（device add）和彩色日志正常工作
+    stdin_open: true
+    tty: true

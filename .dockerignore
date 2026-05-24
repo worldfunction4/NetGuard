@@ -1,0 +1,16 @@
+# 排除不进入镜像的文件
+.venv
+.git
+.vscode
+.claude
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+backups_config
+reports
+logs
+devices.yaml
+.env
+*.md
+!README.md
