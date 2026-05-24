@@ -22,3 +22,7 @@ secrets.yaml
 
 # Claude Code 本地配置（不入库）
 .claude/
+
+# 除去一下 CLAUDE.md 和 AGENTS.md
+CLAUDE.md
+AGENTS.md

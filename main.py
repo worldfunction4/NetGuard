@@ -3,7 +3,7 @@ import argparse
 from backup.collector import work_one
 from diff.comparator import generate_html_diff
 from logger import setup_logger
-from config import BACKUP_DIR, REPORT_DIR
+from config import BACKUP_DIR, REPORT_DIR, load_dotenv
 from config.manager import (
     load_devices, load_commands,
     add_device, update_device, remove_device, list_devices,
@@ -261,6 +261,9 @@ def cmd_inspect(args, logger, devices):
 
 
 def main():
+    # 加载 .env（必须在日志之前）
+    load_dotenv()
+
     # 初始化日志
     logger = setup_logger()
 
