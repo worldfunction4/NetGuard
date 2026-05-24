@@ -1,0 +1,21 @@
+# 设备信息示例文件——复制为 devices.yaml 并填入真实信息
+# devices.yaml 已加入 .gitignore，不会提交到仓库
+- name: 核心交换机
+  location: 3楼机房
+  role: core
+  connection:
+    device_type: huawei_telnet
+    ip: 192.168.x.x
+    username: your_username
+    password: your_password
+    timeout: 30
+    port: 23
+
+- name: 接入交换机
+  connection:
+    device_type: huawei_telnet
+    ip: 192.168.x.x
+    username: your_username
+    password: your_password
+    timeout: 30
+    port: 23

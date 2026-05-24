@@ -1,0 +1,175 @@
+{# Jinja2 HTML 巡检报告模板 #}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetGuard 巡检报告</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: "Microsoft YaHei", Arial, sans-serif; background: #f5f7fa; color: #333; }
+        header { background: #1a3a5c; color: #fff; padding: 20px 32px; }
+        header h1 { font-size: 1.6rem; letter-spacing: 2px; }
+        header p { font-size: 0.85rem; opacity: 0.75; margin-top: 4px; }
+        .container { max-width: 1100px; margin: 28px auto; padding: 0 16px; }
+
+        /* 汇总卡片 */
+        .summary { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .card { flex: 1; min-width: 140px; background: #fff; border-radius: 8px;
+                padding: 18px 20px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); text-align: center; }
+        .card .num { font-size: 2rem; font-weight: 700; }
+        .card .label { font-size: 0.8rem; color: #888; margin-top: 4px; }
+        .card.warn .num { color: #e67e22; }
+        .card.ok   .num { color: #27ae60; }
+        .card.err  .num { color: #e74c3c; }
+
+        /* 告警横幅 */
+        .alert-banner { background: #fff3cd; border-left: 4px solid #f0ad4e;
+                        padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; }
+        .alert-banner h3 { color: #856404; margin-bottom: 8px; }
+        .alert-banner ul { padding-left: 18px; color: #664d03; }
+
+        /* 设备表格 */
+        table { width: 100%; border-collapse: collapse; background: #fff;
+                border-radius: 8px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+        thead { background: #1a3a5c; color: #fff; }
+        th, td { padding: 11px 14px; text-align: left; font-size: 0.88rem; }
+        tbody tr:hover { background: #f0f4fa; }
+        tbody tr:nth-child(even) { background: #f8fafc; }
+        tbody tr:nth-child(even):hover { background: #eef3fb; }
+
+        /* 状态 / 指标着色 */
+        .tag { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+        .tag-ok         { background: #d4edda; color: #155724; }
+        .tag-warn       { background: #fff3cd; color: #856404; }
+        .tag-unreachable{ background: #f8d7da; color: #721c24; }
+        .tag-error      { background: #f8d7da; color: #721c24; }
+
+        .val-warn { color: #e67e22; font-weight: 700; }
+        .val-ok   { color: #27ae60; }
+        .val-none { color: #aaa; }
+
+        footer { text-align: center; color: #aaa; font-size: 0.78rem; padding: 32px 0 16px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>NetGuard 网络巡检报告</h1>
+    <p>生成时间：{{ generated_at }}　共巡检 {{ devices | length }} 台设备</p>
+</header>
+
+<div class="container">
+
+    {# ── 汇总卡片 ─────────────────────────────────────────────────── #}
+    {% set ok_count      = devices | selectattr("status", "eq", "ok") | list | length %}
+    {% set warn_count    = devices | selectattr("alerts") | list | length %}
+    {% set unreach_count = devices | selectattr("status", "eq", "unreachable") | list | length %}
+    {% set err_count     = devices | selectattr("status", "eq", "error") | list | length %}
+
+    <div class="summary">
+        <div class="card ok">
+            <div class="num">{{ ok_count }}</div>
+            <div class="label">正常</div>
+        </div>
+        <div class="card warn">
+            <div class="num">{{ warn_count }}</div>
+            <div class="label">告警</div>
+        </div>
+        <div class="card err">
+            <div class="num">{{ unreach_count + err_count }}</div>
+            <div class="label">异常 / 不可达</div>
+        </div>
+    </div>
+
+    {# ── 告警横幅 ─────────────────────────────────────────────────── #}
+    {% set alert_devices = devices | selectattr("alerts") | list %}
+    {% if alert_devices %}
+    <div class="alert-banner">
+        <h3>⚠ 指标超阈值告警</h3>
+        <ul>
+        {% for dev in alert_devices %}
+            {% for alert in dev.alerts %}
+            <li>{{ dev.name }}（{{ dev.ip }}）— {{ alert }}</li>
+            {% endfor %}
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {# ── 设备明细表 ───────────────────────────────────────────────── #}
+    <table>
+        <thead>
+            <tr>
+                <th>设备名</th>
+                <th>IP 地址</th>
+                <th>位置 / 角色</th>
+                <th>类型</th>
+                <th>CPU %</th>
+                <th>内存 %</th>
+                <th>接口 ↑ / ↓</th>
+                <th>状态</th>
+                <th>采集时间</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for dev in devices %}
+            <tr>
+                <td>{{ dev.name }}</td>
+                <td>{{ dev.ip }}</td>
+                <td>{{ dev.location or "" }}{% if dev.role %} / {{ dev.role }}{% endif %}</td>
+                <td>{{ dev.device_type }}</td>
+
+                {# CPU #}
+                <td>
+                {% if dev.cpu_percent is none %}
+                    <span class="val-none">—</span>
+                {% elif dev.cpu_percent >= 80 %}
+                    <span class="val-warn">{{ dev.cpu_percent }}%</span>
+                {% else %}
+                    <span class="val-ok">{{ dev.cpu_percent }}%</span>
+                {% endif %}
+                </td>
+
+                {# 内存 #}
+                <td>
+                {% if dev.memory_percent is none %}
+                    <span class="val-none">—</span>
+                {% elif dev.memory_percent >= 85 %}
+                    <span class="val-warn">{{ dev.memory_percent }}%</span>
+                {% else %}
+                    <span class="val-ok">{{ dev.memory_percent }}%</span>
+                {% endif %}
+                </td>
+
+                {# 接口 #}
+                <td>
+                {% if dev.interfaces_up is none %}
+                    <span class="val-none">—</span>
+                {% else %}
+                    {{ dev.interfaces_up }} / {{ dev.interfaces_down }}
+                {% endif %}
+                </td>
+
+                {# 状态标签 #}
+                <td>
+                {% if dev.alerts %}
+                    <span class="tag tag-warn">告警</span>
+                {% elif dev.status == "ok" %}
+                    <span class="tag tag-ok">正常</span>
+                {% elif dev.status == "unreachable" %}
+                    <span class="tag tag-unreachable">不可达</span>
+                {% else %}
+                    <span class="tag tag-error">错误</span>
+                {% endif %}
+                </td>
+
+                <td>{{ dev.collected_at }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+</div>
+<footer>NetGuard © 2026 — 网络设备自动化运维工具</footer>
+</body>
+</html>

@@ -1,84 +1,78 @@
+"""钉钉 Webhook 告警模块——巡检异常时推送消息
+
+无 Webhook 时自动降级：只记录日志，不抛出异常，不影响主流程。
 """
-钉钉 Webhook 告警模块
-发现备份异常时通过钉钉自定义机器人推送告警消息
-"""
+import logging
 import os
-import time
-import hmac
-import hashlib
-import base64
-import urllib.parse
+from datetime import datetime
 
-from dotenv import load_dotenv
-
-import requests
-
-from src.logger import logger
-
-load_dotenv()
+logger = logging.getLogger("NetGuard")
 
 
-class DingTalkNotifier:
+def send_dingtalk(webhook_url: str, message: str) -> bool:
+    """
+    通过钉钉自定义机器人 Webhook 发送告警消息（text 类型）。
 
-    def __init__(self):
-        self.webhook_url = os.getenv("DINGTALK_WEBHOOK_URL")
-        self.secret = os.getenv("DINGTALK_SECRET")
+    Args:
+        webhook_url: 钉钉机器人的 Webhook 地址（从 .env 读取）
+        message:     告警正文，纯文本
 
-        if not self.webhook_url or not self.secret:
-            logger.warning("钉钉 Webhook 配置不完整，告警功能不可用")
-            self._enabled = False
-        else:
-            self._enabled = True
+    Returns:
+        发送成功返回 True，失败返回 False
+    """
+    if not webhook_url:
+        logger.warning("DINGTALK_WEBHOOK 未配置，跳过告警推送（消息已记录在日志中）")
+        return False
 
-    def _generate_sign(self):
+    try:
+        import requests
+        payload = {"msgtype": "text", "text": {"content": message}}
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
 
-        if not self._enabled:
-            return None, None
+        if data.get("errcode") == 0:
+            logger.info("钉钉告警发送成功")
+            return True
 
-        timestamp = str(round(time.time() * 1000))
-        string_to_sign = f"{timestamp}\n{self.secret}"
-        hmac_code = hmac.new(self.secret.encode('utf-8'), string_to_sign.encode('utf-8'), hashlib.sha256).digest()
-        sign = base64.b64encode(hmac_code).decode('utf-8')
-        sign = urllib.parse.quote(sign)
-        return timestamp, sign
+        # 钉钉 API 返回非 0 错误码
+        logger.error(f"钉钉 API 错误: errcode={data.get('errcode')}, errmsg={data.get('errmsg')}")
+        return False
 
-    def send_markdown(self, title, text):
-        """
-        发送 markdown 格式消息到钉钉群
+    except Exception as e:
+        logger.error(f"钉钉告警发送失败: {e}")
+        return False
 
-        Args:
-            title: 消息标题
-            text: markdown 格式消息正文
 
-        Returns:
-            成功返回 True，失败返回 False
-        """
-        if not self._enabled:
-            return False
+def format_alert_message(device_name: str, metric: str, value: int, threshold: int) -> str:
+    """
+    格式化告警消息文本。
 
-        timestamp, sign = self._generate_sign()
-        if timestamp is None:
-            return False
+    示例输出：
+        【NetGuard 告警】SW-Core-01
+        指标：cpu_percent = 85%（阈值 80%）
+        时间：2026-05-24 10:30:00
+    """
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return (
+        f"【NetGuard 告警】{device_name}\n"
+        f"指标：{metric} = {value}%（阈值 {threshold}%）\n"
+        f"时间：{now}"
+    )
 
-        signed_url = f"{self.webhook_url}&timestamp={timestamp}&sign={sign}"
 
-        payload = {
-            "msgtype": "markdown",
-            "markdown": {
-                "title": title,
-                "text": text,
-            },
-        }
+def send_alert_if_configured(device_name: str, metric: str, value: int, threshold: int) -> bool:
+    """
+    从环境变量读取 Webhook，格式化并发送告警。
+    无 Webhook 配置时仅记录日志。
 
-        try:
-            resp = requests.post(signed_url, json=payload, timeout=10)
-            data = resp.json()
-            if data.get("errcode") == 0:
-                logger.info(f"钉钉告警已发送: {title}")
-                return True
-            else:
-                logger.warning(f"钉钉返回错误: {data}")
-                return False
-        except requests.RequestException as e:
-            logger.warning(f"钉钉告警发送失败: {e}")
-            return False
+    Returns:
+        True 表示成功推送（或无需推送），False 表示推送失败
+    """
+    webhook = os.environ.get("DINGTALK_WEBHOOK", "").strip()
+    msg = format_alert_message(device_name, metric, value, threshold)
+
+    # 无论是否推送，始终把告警写入日志
+    logger.warning(f"告警: {device_name} | {metric}={value}% (阈值 {threshold}%)")
+
+    return send_dingtalk(webhook, msg)

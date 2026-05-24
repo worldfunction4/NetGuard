@@ -1,93 +1,50 @@
-"""
-云端集成模块
-将报告上传 OSS + 异常时钉钉告警，完整的云网融合流程
-"""
-from pathlib import Path
+"""云端集成入口——OSS 备份同步 + 钉钉告警"""
+import logging
+import os
 
-from src.logger import logger
-from backup.oss import upload_report
-from backup.notify import DingTalkNotifier
+from backup.oss import make_oss_client_from_env
+from backup.notify import send_alert_if_configured
+
+logger = logging.getLogger("NetGuard")
 
 
-def cloud_sync(html_path, excel_path, backup_results):
+def sync_backup_to_cloud(local_path: str) -> bool:
     """
-    云端同步：上传报告到 OSS，发现异常时推送钉钉告警
+    将本地备份文件或目录上传到阿里云 OSS。
+    OSS 凭据从环境变量读取（见 .env）。
+
+    无 OSS 配置时静默跳过，返回 False。
 
     Args:
-        html_path: HTML 报告路径
-        excel_path: Excel 报告路径
-        backup_results: backup_all_devices() 的返回值 {total, success, failed, results}
+        local_path: 要上传的本地文件或目录路径
 
     Returns:
-        dict: {oss_html, oss_excel, alert_sent}
+        同步成功返回 True，未配置或失败返回 False
     """
-    oss_urls = {"oss_html": None, "oss_excel": None, "alert_sent": False}
+    from pathlib import Path
 
-    # 1. 上传 HTML 报告
-    html_url = upload_report(html_path)
-    if html_url:
-        logger.info(f"HTML 报告已上传: {html_url}")
-        oss_urls["oss_html"] = html_url
+    client = make_oss_client_from_env()
+    if client is None:
+        return False
+
+    local = Path(local_path)
+    remote_prefix = "netguard/backups"
+
+    if local.is_dir():
+        count = client.upload_dir(str(local), remote_prefix)
+        return count > 0
+    elif local.is_file():
+        remote = f"{remote_prefix}/{local.name}"
+        return client.upload(str(local), remote)
     else:
-        logger.warning("HTML 报告 OSS 上传跳过（无凭证或上传失败）")
-
-    # 2. 上传 Excel 报告
-    excel_url = upload_report(excel_path)
-    if excel_url:
-        logger.info(f"Excel 报告已上传: {excel_url}")
-        oss_urls["oss_excel"] = excel_url
-    else:
-        logger.warning("Excel 报告 OSS 上传跳过（无凭证或上传失败）")
-
-    # 3. 检查是否有失败设备，有则发送钉钉告警
-    failed_count = backup_results.get("failed", 0)
-    if failed_count > 0:
-        notifier = DingTalkNotifier()
-        if notifier._enabled:
-            # 构建告警内容
-            lines = [
-                f"## NetGuard 备份异常告警",
-                f"",
-                f"- 备份总数：**{backup_results['total']}** 台",
-                f"- 成功：**{backup_results['success']}** 台",
-                f"- 失败：**{failed_count}** 台",
-                f"",
-                f"### 失败设备详情",
-            ]
-            for r in backup_results.get("results", []):
-                if r.get("status") == "failed":
-                    lines.append(f"- {r['device']}: {r.get('reason', '未知')}")
-
-            # 如有 OSS 链接，附在告警里
-            if oss_urls["oss_html"]:
-                lines.append(f"")
-                lines.append(f"[查看完整报告]({oss_urls['oss_html']})")
-
-            text = "\n".join(lines)
-            ok = notifier.send_markdown("NetGuard 备份异常告警", text)
-            if ok:
-                oss_urls["alert_sent"] = True
-
-    return oss_urls
+        logger.error(f"sync_backup_to_cloud: 路径不存在 {local_path}")
+        return False
 
 
-if __name__ == "__main__":
-    # 独立运行：python -m backup.cloud
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-
-    logger.info("进入 Mock 模式测试云端同步...")
-    result = cloud_sync(
-        html_path="reports/nonexistent.html",
-        excel_path="reports/nonexistent.xlsx",
-        backup_results={
-            "total": 5,
-            "success": 4,
-            "failed": 1,
-            "results": [
-                {"device": "SW-Core", "status": "success"},
-                {"device": "R1-Edge", "status": "failed", "reason": "连接超时"},
-            ],
-        },
-    )
-    print(f"结果: {result}")
+def notify_alert(device_name: str, metric: str, value: int, threshold: int):
+    """
+    触发钉钉告警推送。
+    Webhook 地址从环境变量 DINGTALK_WEBHOOK 读取。
+    无配置时仅记录日志，不影响主流程。
+    """
+    send_alert_if_configured(device_name, metric, value, threshold)

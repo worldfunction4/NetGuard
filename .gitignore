@@ -1,44 +1,24 @@
-# --- Python 缓存与编译文件 ---
-__pycache__/
-*.py[cod]
-*$py.class
-
-# --- 虚拟环境---
-venv/
+# 虚拟环境
 .venv/
-env/
-ENV/
-bin/
-lib/
-include/
 
-# --- 环境变量与敏感信息 ---
+# 运行时生成目录（备份、报告、日志）
+backups_config/
+reports/
+logs/
+
+# Python 编译缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 设备凭据（含真实 IP 和密码，不入库）
+devices.yaml
+secrets.yaml
 .env
-.flaskenv
-*.log
-secret_key.txt
 
-# --- IDE 与编辑器配置 ---
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# --- 打包与分发 ---
-dist/
-build/
-*.egg-info/
-nosetests.xml
-coverage.xml
-htmlcov/
-
-# --- 操作系统临时文件 ---
-.DS_Store
-Thumbs.db
-
-# --- 测试xlsx文件 ---
-*.xlsx
-
-
-# --- 环境变量 ---
-.env
+# Claude Code 本地配置（不入库）
+.claude/

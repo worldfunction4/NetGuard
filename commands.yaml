@@ -1,0 +1,5 @@
+config:
+ - vlan batch 10 20
+
+show:
+ - dis vlan

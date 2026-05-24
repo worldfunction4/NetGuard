@@ -1,193 +1,162 @@
-"""
-Excel 巡检报告生成器
-将设备信息和备份状态写入格式化的 Excel 文件，适合存档、打印和分析
-"""
-import time
+"""openpyxl Excel 巡检报告模块"""
 from pathlib import Path
-
+from datetime import datetime
 import openpyxl
-from openpyxl.styles import (
-    Font, PatternFill, Alignment, Border, Side, NamedStyle
-)
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from src.logger import logger
 
-OUTPUT_DIR = Path("reports")
+# ── 样式常量 ──────────────────────────────────────────────────────────────────
 
-# ── 配色（与 HTML 报告统一） ──────────────────────────
-HEADER_FILL = PatternFill(start_color="1A1A2E", end_color="1A1A2E", fill_type="solid")
-HEADER_FONT = Font(name="微软雅黑", bold=True, color="FFFFFF", size=11)
-
-SUCCESS_FILL = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
-SUCCESS_FONT = Font(name="微软雅黑", bold=True, color="065F46", size=10)
-
-FAILED_FILL = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
-FAILED_FONT = Font(name="微软雅黑", bold=True, color="991B1B", size=10)
-
-NORMAL_FONT = Font(name="微软雅黑", size=10)
-TITLE_FONT = Font(name="微软雅黑", bold=True, size=16, color="1A1A2E")
-SUBTITLE_FONT = Font(name="微软雅黑", size=10, color="64748B")
-
-THIN_BORDER = Border(
-    left=Side(style="thin", color="E5E7EB"),
-    right=Side(style="thin", color="E5E7EB"),
-    top=Side(style="thin", color="E5E7EB"),
-    bottom=Side(style="thin", color="E5E7EB"),
-)
-CENTER_ALIGN = Alignment(horizontal="center", vertical="center")
-LEFT_ALIGN = Alignment(horizontal="left", vertical="center")
+_HEAD_FILL  = PatternFill("solid", fgColor="1A3A5C")
+_WARN_FILL  = PatternFill("solid", fgColor="FFF3CD")
+_ERR_FILL   = PatternFill("solid", fgColor="F8D7DA")
+_EVEN_FILL  = PatternFill("solid", fgColor="F8FAFC")
+_HEAD_FONT  = Font(name="Microsoft YaHei", bold=True, color="FFFFFF", size=10)
+_BODY_FONT  = Font(name="Microsoft YaHei", size=10)
+_WARN_FONT  = Font(name="Microsoft YaHei", size=10, bold=True, color="856404")
+_ERR_FONT   = Font(name="Microsoft YaHei", size=10, bold=True, color="721C24")
+_CENTER     = Alignment(horizontal="center", vertical="center")
+_LEFT       = Alignment(horizontal="left", vertical="center")
+_THIN       = Side(style="thin", color="D0D7E2")
+_BORDER     = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 
 
-def _apply_border_and_align(ws, row, col_count, alignment=LEFT_ALIGN):
-    """给一行所有单元格加边框和对齐"""
-    for c in range(1, col_count + 1):
-        cell = ws.cell(row, c)
-        cell.border = THIN_BORDER
-        cell.alignment = alignment
-
-
-def generate_excel_report(devices, backup_results, output_dir=None):
+def generate_excel_report(metrics: list, output_path: str) -> str:
     """
-    生成格式化的 Excel 巡检报告
+    将巡检指标列表写入 Excel 文件。
 
     Args:
-        devices: 设备字典列表（来自 excel_reader.get_device_data）
-        backup_results: 备份结果字典（来自 backup_all_devices 返回值）
-        output_dir: 输出目录，默认 reports/
+        metrics:     巡检结果列表，每项为一台设备的指标字典
+                     示例：[{"name": "SW-01", "ip": "1.1.1.1", "cpu_percent": 45, ...}]
+        output_path: 输出 .xlsx 文件的完整路径（自动创建父目录）
 
     Returns:
-        Path: 保存的文件路径
+        输出文件的路径字符串
     """
-    if output_dir is None:
-        output_dir = OUTPUT_DIR
-
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "巡检报告"
 
-    # ── 列宽预设 ──────────────────────────────────
-    col_widths = [18, 18, 16, 12, 14, 50]
-    # cols: A=设备名称, B=IP, C=设备类型, D=状态, E=备份结果, F=文件/原因
-    for i, width in enumerate(col_widths, 1):
-        ws.column_dimensions[get_column_letter(i)].width = width
+    # ── 标题行 ─────────────────────────────────────────────────────────────
+    title_row = [
+        "设备名", "IP 地址", "位置", "角色", "设备类型",
+        "CPU %", "内存 %", "接口在线", "接口离线", "状态", "告警详情", "采集时间",
+    ]
+    ws.append(title_row)
+    for col_idx, _ in enumerate(title_row, start=1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = _HEAD_FONT
+        cell.fill = _HEAD_FILL
+        cell.alignment = _CENTER
+        cell.border = _BORDER
 
-    # ── 第1行：标题 ────────────────────────────────
-    ws.merge_cells("A1:F1")
-    title_cell = ws.cell(row=1, column=1, value="NetGuard 设备巡检报告")
-    title_cell.font = TITLE_FONT
-    title_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 36
+    # ── 数据行 ─────────────────────────────────────────────────────────────
+    for row_idx, dev in enumerate(metrics, start=2):
+        alerts = dev.get("alerts") or []
+        status = dev.get("status", "")
+        cpu    = dev.get("cpu_percent")
+        mem    = dev.get("memory_percent")
 
-    # ── 第2行：生成时间 ────────────────────────────
-    report_time = time.strftime("%Y-%m-%d %H:%M:%S")
-    ws.merge_cells("A2:F2")
-    time_cell = ws.cell(row=2, column=1, value=f"生成时间：{report_time}")
-    time_cell.font = SUBTITLE_FONT
-    time_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[2].height = 22
+        row_data = [
+            _safe_cell(dev.get("name", "")),
+            _safe_cell(dev.get("ip", "")),
+            _safe_cell(dev.get("location", "")),
+            _safe_cell(dev.get("role", "")),
+            _safe_cell(dev.get("device_type", "")),
+            _fmt_pct(cpu),
+            _fmt_pct(mem),
+            dev.get("interfaces_up", "—"),
+            dev.get("interfaces_down", "—"),
+            _status_label(status, bool(alerts)),
+            _safe_cell("; ".join(alerts) if alerts else ""),
+            _safe_cell(dev.get("collected_at", "")),
+        ]
+        ws.append(row_data)
 
-    # ── 第4行：汇总卡片 ────────────────────────────
-    summary_row = 4
-    total = backup_results.get("total", 0)
-    success = backup_results.get("success", 0)
-    failed = backup_results.get("failed", 0)
+        # 决定行底色
+        is_error = status in ("unreachable", "error")
+        is_warn  = bool(alerts)
+        fill = _ERR_FILL if is_error else (_WARN_FILL if is_warn else (_EVEN_FILL if row_idx % 2 == 0 else None))
 
-    ws.merge_cells(f"A{summary_row}:B{summary_row}")
-    total_cell = ws.cell(row=summary_row, column=1,
-                         value=f"设备总数：{total} 台")
-    total_cell.font = Font(name="微软雅黑", bold=True, size=11, color="1A1A2E")
+        for col_idx in range(1, len(row_data) + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.border = _BORDER
+            cell.alignment = _CENTER if col_idx not in (1, 3, 4, 11) else _LEFT
+            if fill:
+                cell.fill = fill
 
-    success_cell = ws.cell(row=summary_row, column=3,
-                           value=f"成功：{success} 台")
-    success_cell.font = Font(name="微软雅黑", bold=True, size=11, color="10B981")
+        # CPU / 内存超阈值红字
+        for col_idx, val in [(6, cpu), (7, mem)]:
+            threshold = 80 if col_idx == 6 else 85
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if isinstance(val, (int, float)) and val >= threshold:
+                cell.font = _WARN_FONT
+            else:
+                cell.font = _BODY_FONT
 
-    failed_cell = ws.cell(row=summary_row, column=5,
-                          value=f"失败：{failed} 台")
-    failed_cell.font = Font(name="微软雅黑", bold=True, size=11, color="EF4444")
+    # ── 列宽自适应 ─────────────────────────────────────────────────────────
+    col_widths = [16, 16, 14, 10, 18, 8, 8, 9, 9, 10, 40, 18]
+    for i, w in enumerate(col_widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.row_dimensions[1].height = 20
 
-    # ── 第6行：表头 ────────────────────────────────
-    header_row = 6
-    headers = ["设备名称", "IP 地址", "设备类型", "状态", "备份结果", "备份文件 / 失败原因"]
-    for col_idx, header in enumerate(headers, 1):
-        cell = ws.cell(row=header_row, column=col_idx, value=header)
-        cell.font = HEADER_FONT
-        cell.fill = HEADER_FILL
-        cell.alignment = CENTER_ALIGN
-        cell.border = THIN_BORDER
-    ws.row_dimensions[header_row].height = 28
+    # ── 冻结首行 ───────────────────────────────────────────────────────────
+    ws.freeze_panes = "A2"
 
-    # ── 数据行 ──────────────────────────────────────
-    # 构建结果索引
-    result_map = {}
-    for r in backup_results.get("results", []):
-        result_map[r["device"]] = r
+    # ── 汇总 Sheet ─────────────────────────────────────────────────────────
+    _write_summary_sheet(wb, metrics)
 
-    data_start_row = header_row + 1
-    for i, device in enumerate(devices):
-        row = data_start_row + i
-        name = device["name"]
-        result = result_map.get(name, {})
-        backup_status = result.get("status", "")
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(str(out))
+    return str(out)
 
-        # 基本信息
-        ws.cell(row, 1, name)
-        ws.cell(row, 2, device.get("ip", ""))
-        ws.cell(row, 3, device.get("device_type", ""))
-        ws.cell(row, 4, device.get("status", ""))
 
-        # 根据备份状态填入不同内容和样式
-        if backup_status == "success":
-            ws.cell(row, 5, "成功")
-            ws.cell(row, 6, result.get("file", ""))
-            # 应用成功行样式
-            for c in range(1, 7):
-                cell = ws.cell(row, c)
-                cell.fill = SUCCESS_FILL
-                cell.font = Font(name="微软雅黑", size=10)
-                cell.border = THIN_BORDER
-                cell.alignment = LEFT_ALIGN if c > 1 else LEFT_ALIGN
-            # 第5列"成功"用绿色粗体突出
-            ws.cell(row, 5).font = SUCCESS_FONT
+# ── 汇总 Sheet ────────────────────────────────────────────────────────────────
 
-        elif backup_status == "failed":
-            ws.cell(row, 5, "失败")
-            ws.cell(row, 6, result.get("reason", ""))
-            # 应用失败行样式
-            for c in range(1, 7):
-                cell = ws.cell(row, c)
-                cell.fill = FAILED_FILL
-                cell.font = Font(name="微软雅黑", size=10)
-                cell.border = THIN_BORDER
-                cell.alignment = LEFT_ALIGN if c > 1 else LEFT_ALIGN
-            ws.cell(row, 5).font = FAILED_FONT
+def _write_summary_sheet(wb: openpyxl.Workbook, metrics: list):
+    ws = wb.create_sheet("汇总")
+    ok      = sum(1 for d in metrics if d.get("status") == "ok" and not d.get("alerts"))
+    warned  = sum(1 for d in metrics if d.get("alerts"))
+    err     = sum(1 for d in metrics if d.get("status") in ("unreachable", "error"))
 
-        else:
-            ws.cell(row, 5, "未备份")
-            ws.cell(row, 6, "")
-            for c in range(1, 7):
-                cell = ws.cell(row, c)
-                cell.font = NORMAL_FONT
-                cell.border = THIN_BORDER
-                cell.alignment = LEFT_ALIGN if c > 1 else LEFT_ALIGN
+    rows = [
+        ["NetGuard 巡检汇总"],
+        ["生成时间", datetime.now().strftime("%Y-%m-%d %H:%M:%S")],
+        ["设备总数", len(metrics)],
+        ["正常", ok],
+        ["告警", warned],
+        ["异常 / 不可达", err],
+    ]
+    for r in rows:
+        ws.append(r)
 
-        ws.row_dimensions[row].height = 22
+    ws["A1"].font = Font(name="Microsoft YaHei", bold=True, size=14)
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 22
 
-    # ── 冻结表头 ────────────────────────────────────
-    ws.freeze_panes = f"A{header_row + 1}"
 
-    # ── 打印设置 ────────────────────────────────────
-    ws.sheet_properties.pageSetUpPr = openpyxl.worksheet.properties.PageSetupProperties(fitToPage=True)
-    ws.page_setup.orientation = "landscape"
+# ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
-    # ── 保存 ────────────────────────────────────────
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+def _fmt_pct(val) -> str:
+    return f"{val}%" if val is not None else "—"
 
-    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"NetGuard_巡检报告_{timestamp}.xlsx"
-    filepath = output_path / filename
 
-    wb.save(str(filepath))
-    logger.info(f"Excel 巡检报告已保存 → {filepath}")
-    return filepath
+def _status_label(status: str, has_alert: bool) -> str:
+    if has_alert:
+        return "告警"
+    return {"ok": "正常", "unreachable": "不可达", "error": "错误"}.get(status, status)
+
+
+def _safe_cell(value) -> str:
+    """防止 Excel 公式注入（Formula/CSV Injection）。
+
+    以 = + - @ TAB 回车 开头的字符串会被 Excel 解释为公式。
+    在前面加英文单引号，Excel 会将整个单元格视为纯文本字符串。
+    """
+    if not isinstance(value, str):
+        return value  # 数字 / None 直接返回，不受影响
+    if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value

@@ -1,56 +1,112 @@
-"""
-读取 Excel 文件，获取设备信息，返回设备列表
-Excel 文件的格式需要满足以下要求：
-1. 第一行是表头，列名为：name, ip, username, password, device_type, status
-2. 第二行开始是设备信息，每行对应一个设备，列顺序为：name, ip, username, password, device_type, status
-
-"""
-
+"""Excel 设备列表读取模块——从 .xlsx 文件解析设备信息"""
+from pathlib import Path
 import openpyxl
-from openpyxl.utils.exceptions import InvalidFileException
-from .logger import logger
 
-def get_device_data(file_path):
-    devices = [] # 用队列来存储读取到的数据
-    # 异常处理
-    try:
-        # 尝试通过路径打开文件。data_only=True 表示只读结果，不要公式
-        wb = openpyxl.load_workbook(file_path, data_only=True)
-        sheet = wb.active
-        # min_row=2：从第 2 行开始扫描，避开第一行的表头
-        # values_only=True：直接拿格里的值，而不要格子对象本身
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            # 考虑到整行都是空的情况
-            if not any(row):
-                continue
 
-            # 利用解包技术，把这一行的六列数据分别赋值给六个变量
-            # Excel 列顺序：name, ip, username, password, device_type, status
-            name, ip, username, password, device_type, status = row[:6]
+# 期望的列顺序（大小写不敏感）
+_EXPECTED_COLS = ["name", "ip", "port", "device_type", "username", "password"]
 
-            # 将设备信息打包成字典
-            device_info = {
-                "name": name,
+
+def read_devices(path: str) -> list:
+    """
+    从 Excel 文件读取设备列表。
+
+    期望的列顺序：name | ip | port | device_type | username | password
+    （首行为表头，不区分大小写；额外列 location / role 可选）
+
+    返回格式与 devices.yaml 一致，供 collector.py 直接使用：
+    [
+        {
+            "name": "SW-Core-01",
+            "location": "",
+            "role": "",
+            "connection": {
+                "ip": "192.168.1.1",
+                "port": 22,
+                "device_type": "huawei_ssh",
+                "username": "admin",
+                "password": "admin123"
+            }
+        },
+        ...
+    ]
+
+    Raises:
+        FileNotFoundError: 文件不存在
+        ValueError:        表头缺少必要列
+    """
+    file = Path(path)
+    if not file.exists():
+        raise FileNotFoundError(f"设备列表文件不存在: {path}")
+
+    wb = openpyxl.load_workbook(str(file), read_only=True, data_only=True)
+    ws = wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise ValueError("Excel 文件为空")
+
+    # 解析表头（首行），支持大小写不敏感
+    header = [str(h).strip().lower() if h else "" for h in rows[0]]
+    _validate_header(header, path)
+
+    col_idx = {col: header.index(col) for col in _EXPECTED_COLS if col in header}
+    loc_idx = header.index("location") if "location" in header else None
+    role_idx = header.index("role") if "role" in header else None
+
+    devices = []
+    for row_num, row in enumerate(rows[1:], start=2):
+        # 跳过全空行
+        if all(cell is None or str(cell).strip() == "" for cell in row):
+            continue
+
+        def _get(col: str, default=""):
+            idx = col_idx.get(col)
+            if idx is None or idx >= len(row):
+                return default
+            v = row[idx]
+            return str(v).strip() if v is not None else default
+
+        name     = _get("name")
+        ip       = _get("ip")
+        username = _get("username")
+        password = _get("password")
+        dtype    = _get("device_type")
+
+        # port 必须是整数
+        port_raw = _get("port", "22")
+        try:
+            port = int(float(port_raw))
+        except (ValueError, TypeError):
+            raise ValueError(f"第 {row_num} 行 port 列值 {port_raw!r} 不是有效整数")
+
+        if not name or not ip:
+            raise ValueError(f"第 {row_num} 行缺少 name 或 ip 字段")
+
+        location = str(row[loc_idx]).strip() if loc_idx is not None and row[loc_idx] else ""
+        role     = str(row[role_idx]).strip() if role_idx is not None and row[role_idx] else ""
+
+        devices.append({
+            "name": name,
+            "location": location,
+            "role": role,
+            "connection": {
                 "ip": ip,
+                "port": port,
+                "device_type": dtype,
                 "username": username,
                 "password": password,
-                "device_type": device_type,
-                "status": status,
-            }
+            },
+        })
 
-            # 将字典内容装入devices
-            devices.append(device_info)
-        return devices
-    
-    # 路径不对
-    except FileNotFoundError:
-        logger.error(f"抱歉，未能成功找到:{file_path},请重新检查一下文件路径是否正确？")
-        return None # 调用函数失败
-    # 格式不对
-    except InvalidFileException:
-        logger.error(f"{file_path}似乎不是正确的xlsx格式?还请重新检查一下")
-        return None # 失败
-    # 其他错误
-    except Exception as e:
-        logger.error(f"抱歉，似乎遇到的突发情况:{e}")
-        return None # 失败
+    wb.close()
+    return devices
+
+
+def _validate_header(header: list, path: str):
+    missing = [col for col in _EXPECTED_COLS if col not in header]
+    if missing:
+        raise ValueError(
+            f"Excel 文件 {path} 表头缺少必要列: {missing}。"
+            f"请确保首行包含: {_EXPECTED_COLS}"
+        )
