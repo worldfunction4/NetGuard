@@ -147,6 +147,3 @@ TCP 可达性探测（socket.create_connection）
   → 分类捕获，单台设备失败不影响其他设备继续执行
 ```
 
-## 许可证
-
-MIT License
