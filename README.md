@@ -28,7 +28,8 @@ pip install -r requirements.txt
 
 # 3. 准备设备列表（二选一）
 # 方式 A：复制 YAML 示例
-copy devices.example.yaml devices.yaml
+Copy-Item devices.example.yaml devices.yaml   # PowerShell
+# CMD 用户请用: copy devices.example.yaml devices.yaml
 
 # 方式 B：使用 Excel（首行: name | ip | port | device_type | username | password）
 # 创建 devices.xlsx 后，所有子命令加上 --source excel
@@ -51,7 +52,7 @@ python main.py inspect      # 执行巡检
 docker compose build
 
 # 复制示例配置
-copy devices.example.yaml devices.yaml
+Copy-Item devices.example.yaml devices.yaml
 
 # 一键演示（mock 模式默认开启）
 docker compose run --rm netguard run
@@ -88,7 +89,7 @@ command remove config/show <命令>     删除命令
 
 ## Mock 模式
 
-设置环境变量 `NETGUARD_MOCK=1` 即可在**无任何网络设备**的情况下跑通全流程。MockDriver 返回模拟的华为 / Cisco 设备输出,CPU / 内存数据有随机波动，巡检报告、差异报告都能正常生成。
+设置环境变量 `NETGUARD_MOCK=1` 即可在**无任何网络设备**的情况下跑通全流程。MockDriver 返回模拟的华为 / Cisco 设备输出，CPU / 内存数据有随机波动，巡检报告、差异报告都能正常生成。
 
 ```powershell
 # PowerShell
@@ -96,6 +97,15 @@ $env:NETGUARD_MOCK = "1"
 python main.py run && python main.py diff && python main.py inspect
 start reports\           # 在资源管理器打开报告目录
 ```
+
+```cmd
+REM CMD
+set NETGUARD_MOCK=1
+python main.py run && python main.py diff && python main.py inspect
+start reports\
+```
+
+> 也可以复制 `.env.example` 为 `.env`，将 `NETGUARD_MOCK=1` 写入其中，省去每次手动设置环境变量。
 
 真实环境只需去掉环境变量，`devices.yaml` 填写真实 IP。——**配置和 mock 彻底分离，切换零代码改动。**
 
@@ -152,6 +162,7 @@ NetGuard/
 ├── tests/                 # 73 项 pytest 单元测试
 ├── commands.yaml          # 配置 / 查看命令示例
 ├── devices.example.yaml   # 设备列表示例
+├── .env.example           # 环境变量配置示例（钉钉/OSS/Mock）
 └── requirements.txt       # 项目依赖
 ```
 
