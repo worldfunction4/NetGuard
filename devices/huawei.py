@@ -1,6 +1,5 @@
-import re
 from netmiko import ConnectHandler
-from devices.base import BaseDriver
+from devices.base import BaseDriver, _extract_int
 from devices.try_connect import connect_with_retry
 
 
@@ -40,8 +39,3 @@ class HuaweiDriver(BaseDriver):
         down = len(re.findall(r"\*?down\s+down\b", intf_text))
 
         return {"cpu_percent": cpu, "memory_percent": mem, "interfaces_up": up, "interfaces_down": down}
-
-
-def _extract_int(text: str, pattern: str) -> int | None:
-    m = re.search(pattern, text)
-    return int(m.group(1)) if m else None

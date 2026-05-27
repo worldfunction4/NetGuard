@@ -33,7 +33,8 @@ def load_devices(path: Path = DEVICES_FILE) -> list:
     if not raw:
         raise ValueError(
             "当前没有可以进行配置的设备。\n"
-            f"请在 {path} 中添加至少一台设备信息后重试。"
+            f"请在 {path} 中添加至少一台设备信息后重试，\n"
+            "或使用 --source excel --source-file devices.xlsx 从 Excel 加载。"
         )
     if not isinstance(raw, list):
         raise ValueError(f"{path} 格式有误：顶层应为列表（- name: ...），当前是 {type(raw).__name__}")

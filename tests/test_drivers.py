@@ -19,7 +19,7 @@ class TestGetDriver:
 
     def test_cisco_ios_returns_cisco_driver(self):
         from devices.base import get_driver
-        from devices.cioso import CiscoDriver
+        from devices.cisco import CiscoDriver
 
         conn = {"device_type": "cisco_ios", "host": "1.1.1.1"}
         driver = get_driver(conn)
@@ -27,7 +27,7 @@ class TestGetDriver:
 
     def test_cisco_xe_returns_cisco_driver(self):
         from devices.base import get_driver
-        from devices.cioso import CiscoDriver
+        from devices.cisco import CiscoDriver
 
         conn = {"device_type": "cisco_xe", "host": "1.1.1.1"}
         driver = get_driver(conn)
@@ -53,23 +53,23 @@ class TestCiscoDriver:
     """测试 CiscoDriver 的四个接口，用 mock 替代 Netmiko ConnectHandler"""
 
     def _make_driver(self):
-        from devices.cioso import CiscoDriver
+        from devices.cisco import CiscoDriver
         return CiscoDriver({"device_type": "cisco_ios", "host": "1.1.1.1"})
 
-    @patch("devices.cioso.ConnectHandler")
+    @patch("devices.cisco.ConnectHandler")
     def test_connect_calls_connect_handler(self, mock_ch):
         driver = self._make_driver()
         driver.connect()
         mock_ch.assert_called_once_with(device_type="cisco_ios", host="1.1.1.1")
 
-    @patch("devices.cioso.ConnectHandler")
+    @patch("devices.cisco.ConnectHandler")
     def test_disconnect_calls_underlying_disconnect(self, mock_ch):
         driver = self._make_driver()
         driver.connect()
         driver.disconnect()
         mock_ch.return_value.disconnect.assert_called_once()
 
-    @patch("devices.cioso.ConnectHandler")
+    @patch("devices.cisco.ConnectHandler")
     def test_send_command_returns_output(self, mock_ch):
         mock_ch.return_value.send_command.return_value = "Cisco IOS Version 15.2"
         driver = self._make_driver()
@@ -78,7 +78,7 @@ class TestCiscoDriver:
         assert result == "Cisco IOS Version 15.2"
         mock_ch.return_value.send_command.assert_called_once_with("show version")
 
-    @patch("devices.cioso.ConnectHandler")
+    @patch("devices.cisco.ConnectHandler")
     def test_send_config_set_returns_output(self, mock_ch):
         mock_ch.return_value.send_config_set.return_value = "config applied"
         driver = self._make_driver()
@@ -89,7 +89,7 @@ class TestCiscoDriver:
             ["interface lo0", "description test"]
         )
 
-    @patch("devices.cioso.ConnectHandler")
+    @patch("devices.cisco.ConnectHandler")
     def test_context_manager_connects_and_disconnects(self, mock_ch):
         """with 语句应自动 connect / disconnect"""
         driver = self._make_driver()

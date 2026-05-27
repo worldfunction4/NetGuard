@@ -1,5 +1,12 @@
 """设备驱动抽象基类——所有厂商驱动都继承这个"""
 import os
+import re
+
+
+def _extract_int(text: str, pattern: str) -> int | None:
+    """从文本中用正则提取整数指标值，未匹配返回 None"""
+    m = re.search(pattern, text)
+    return int(m.group(1)) if m else None
 
 
 class BaseDriver:
@@ -47,7 +54,7 @@ def get_driver(connection: dict) -> "BaseDriver":
     """工厂函数：根据 device_type（或 NETGUARD_MOCK 环境变量）返回对应驱动实例"""
     # 延迟导入：避免循环依赖
     from devices.huawei import HuaweiDriver
-    from devices.cioso import CiscoDriver
+    from devices.cisco import CiscoDriver
     from devices.mock import MockDriver
 
     device_type = connection.get("device_type", "")

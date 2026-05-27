@@ -26,8 +26,12 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1          # Windows PowerShell
 pip install -r requirements.txt
 
-# 3. 复制示例配置
+# 3. 准备设备列表（二选一）
+# 方式 A：复制 YAML 示例
 copy devices.example.yaml devices.yaml
+
+# 方式 B：使用 Excel（首行: name | ip | port | device_type | username | password）
+# 创建 devices.xlsx 后，所有子命令加上 --source excel
 
 # 4. 编辑 devices.yaml 填入你的设备信息
 # 或直接使用交互式添加：
@@ -66,19 +70,21 @@ start reports\*.html
 ## 命令参考
 
 ```
-子命令                       说明
-───────────────────────────────────────────
-run                          连接设备，推配置，保存快照
-diff                         生成 HTML 配置差异报告
-inspect [--workers N]        巡检所有设备，生成 HTML + Excel
-device list                  列出所有设备
-device add                   交互式添加设备
-device update <名> <字段> <值> 修改设备字段
-device remove <名>            删除设备
-command list                 列出所有命令
-command add config/show <命令> 添加配置 / 查看命令
-command remove config/show <命令> 删除命令
+子命令                               说明
+────────────────────────────────────────────────────
+run [--source yaml|excel]            连接设备，推配置，保存快照
+diff [--source yaml|excel]           生成 HTML 配置差异报告
+inspect [--workers N] [--source ...] 巡检所有设备，生成 HTML + Excel
+device list                          列出所有设备
+device add                           交互式添加设备
+device update <名> <字段> <值>        修改设备字段
+device remove <名>                    删除设备
+command list                         列出所有命令
+command add config/show <命令>        添加配置 / 查看命令
+command remove config/show <命令>     删除命令
 ```
+
+> `--source excel --source-file devices.xlsx` 可从 Excel 加载设备列表（首行：name | ip | port | device_type | username | password），默认从 `devices.yaml` 加载。
 
 ## Mock 模式
 
@@ -98,9 +104,9 @@ start reports\           # 在资源管理器打开报告目录
 ```
                 ┌──────────────────┐
                 │    BaseDriver    │  ← 抽象基类
-                │  connect()      │     定义统一接口
-                │  send_command() │
-                │  send_config()  │
+                │  connect()       │     定义统一接口
+                │  send_command()  │
+                │  send_config()   │
                 └────────┬─────────┘
            ┌─────────────┼─────────────┐
            ▼             ▼             ▼
@@ -117,7 +123,6 @@ start reports\           # 在资源管理器打开报告目录
 ```
 NetGuard/
 ├── main.py                # CLI 入口，argparse 命令分发
-├── config.py              # 路径常量 + 告警阈值
 ├── logger.py              # 日志模块（控制台 + 文件双输出）
 ├── devices/
 │   ├── base.py            # BaseDriver 抽象基类 + get_driver 工厂
@@ -140,9 +145,10 @@ NetGuard/
 │   └── templates/
 │       └── inspect.html   # 巡检报告 Jinja2 模板
 ├── config/
-│   └── manager.py         # 设备和命令的 YAML 配置管理
+│   ├── __init__.py          # 路径常量 + 阈值 + .env 加载
+│   └── manager.py           # 设备和命令的 YAML 配置管理
 ├── src/
-│   └── excel_reader.py    # Excel 设备列表读取
+│   └── excel_reader.py      # Excel 设备列表读取（--source excel 时使用）
 ├── tests/                 # 73 项 pytest 单元测试
 ├── commands.yaml          # 配置 / 查看命令示例
 ├── devices.example.yaml   # 设备列表示例

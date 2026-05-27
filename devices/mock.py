@@ -6,7 +6,7 @@
 """
 import random
 import re
-from devices.base import BaseDriver
+from devices.base import BaseDriver, _extract_int
 
 
 def _rand(base: int, spread: int = 8) -> int:
@@ -183,11 +183,6 @@ def _parse_cisco_metrics(outputs: dict) -> dict:
     mem = _calc_cisco_mem_percent(mem_text)
     up, down = _count_cisco_interfaces(outputs.get("show ip interface brief", ""))
     return {"cpu_percent": cpu, "memory_percent": mem, "interfaces_up": up, "interfaces_down": down}
-
-
-def _extract_int(text: str, pattern: str) -> int | None:
-    m = re.search(pattern, text)
-    return int(m.group(1)) if m else None
 
 
 def _calc_cisco_mem_percent(text: str) -> int | None:

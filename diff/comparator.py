@@ -5,15 +5,8 @@ from datetime import datetime
 import difflib
 import html
 import re
-
+from backup.storage import _safe_name
 from config import REPORT_DIR
-
-
-def _safe_name(name: str) -> str:
-    """净化设备名，用于文件名和 HTML 属性，防止路径穿越和注入"""
-    safe = re.sub(r'[/\\<>:"|?*\x00-\x1f]', "_", name)
-    safe = safe.replace("..", "__").strip(". ")
-    return safe or "unknown_device"
 
 """
 对比 before 和 after 文本，生成带颜色高亮的 HTML 差异报告。

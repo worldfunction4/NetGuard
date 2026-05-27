@@ -4,6 +4,7 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from config import THRESHOLDS
 
 
 # ── 样式常量 ──────────────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ def generate_excel_report(metrics: list, output_path: str) -> str:
             dev.get("interfaces_up", "—"),
             dev.get("interfaces_down", "—"),
             _status_label(status, bool(alerts)),
-            _safe_cell("; ".join(alerts) if alerts else ""),
+            _safe_cell("; ".join(a["text"] if isinstance(a, dict) else a for a in alerts) if alerts else ""),
             _safe_cell(dev.get("collected_at", "")),
         ]
         ws.append(row_data)
@@ -86,9 +87,9 @@ def generate_excel_report(metrics: list, output_path: str) -> str:
             if fill:
                 cell.fill = fill
 
-        # CPU / 内存超阈值红字
-        for col_idx, val in [(6, cpu), (7, mem)]:
-            threshold = 80 if col_idx == 6 else 85
+        # CPU / 内存超阈值红字（阈值从 config.THRESHOLDS 读取）
+        for col_idx, val, metric_key in [(6, cpu, "cpu_percent"), (7, mem, "memory_percent")]:
+            threshold = THRESHOLDS.get(metric_key, 80)
             cell = ws.cell(row=row_idx, column=col_idx)
             if isinstance(val, (int, float)) and val >= threshold:
                 cell.font = _WARN_FONT

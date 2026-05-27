@@ -198,7 +198,7 @@ class TestGenerateExcelReport:
                 "role": "access", "device_type": "mock_huawei",
                 "cpu_percent": 90, "memory_percent": 88,
                 "interfaces_up": 2, "interfaces_down": 2,
-                "status": "ok", "alerts": ["cpu_percent = 90%（阈值 80%）"],
+                "status": "ok", "alerts": [{"metric": "cpu_percent", "value": 90, "threshold": 80, "text": "cpu_percent = 90%（阈值 80%）"}],
                 "collected_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
         ]

@@ -45,7 +45,8 @@ def inspect_device(device: dict) -> dict:
 
         alerts = _check_thresholds(metrics)
         if alerts:
-            logger.warning(f"{name} 巡检告警: {'; '.join(alerts)}")
+            alert_texts = [a["text"] for a in alerts]
+            logger.warning(f"{name} 巡检告警: {'; '.join(alert_texts)}")
 
         return {**base, "status": "ok", **metrics, "alerts": alerts}
 
@@ -65,11 +66,20 @@ def inspect_all(devices: list, max_workers: int = 4) -> list:
     return results
 
 
-def _check_thresholds(metrics: dict) -> list:
-    """对照 config.THRESHOLDS 检查指标，返回告警文本列表"""
+def _check_thresholds(metrics: dict) -> list[dict]:
+    """对照 config.THRESHOLDS 检查指标，返回结构化告警列表。
+
+    每项包含 metric（指标名）、value（实际值）、threshold（阈值）、
+    text（人类可读的告警描述），供 main.py 和 excel.py 各自消费。
+    """
     alerts = []
     for key, threshold in THRESHOLDS.items():
         val = metrics.get(key)
         if val is not None and val >= threshold:
-            alerts.append(f"{key} = {val}%（阈值 {threshold}%）")
+            alerts.append({
+                "metric": key,
+                "value": val,
+                "threshold": threshold,
+                "text": f"{key} = {val}%（阈值 {threshold}%）",
+            })
     return alerts

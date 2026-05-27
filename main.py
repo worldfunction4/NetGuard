@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import argparse
 from backup.collector import work_one
 from diff.comparator import generate_html_diff
+from backup.storage import _safe_name
 from logger import setup_logger
 from config import BACKUP_DIR, REPORT_DIR, load_dotenv
 from config.manager import (
@@ -22,6 +23,10 @@ def cmd_run(args, logger, devices, commands):
             result = future.result()
             if result:
                 logger.info(result)
+
+    # 备份完成后同步到云端（如果配置了 OSS）
+    from backup.cloud import sync_backup_to_cloud
+    sync_backup_to_cloud(str(BACKUP_DIR))
 
 
 def _find_latest_complete_pair(device_dir):
@@ -44,12 +49,10 @@ def _find_latest_complete_pair(device_dir):
 
 def cmd_diff(_args, logger, devices):
     """子命令 diff：为每台设备找最新完整配对，生成 HTML 差异报告"""
-    import re
-
     for dev in devices:
         name = dev["name"]
-        # 目录名与 storage.py 保持一致：使用净化后的设备名
-        safe = re.sub(r'[/\\<>:"|?*\x00-\x1f]', "_", name).replace("..", "__").strip(". ") or "unknown_device"
+        # 使用 _safe_name 与 storage.py 保持一致的目录命名
+        safe = _safe_name(name)
         device_dir = BACKUP_DIR / safe
 
         if not device_dir.exists():
@@ -80,7 +83,7 @@ def cmd_device(args, logger):
             logger.error(str(e))
             return
         if not rows:
-            print("当前没有可以进行配置的设备。")
+            print("当前没有可以进行配置的设备（请检查 devices.yaml 或 devices.xlsx）。")
             return
         print(f"\n{'设备名':<14} {'IP':<17} {'端口':<6} {'类型':<18} {'位置':<12} {'角色'}")
         print("-" * 80)
@@ -231,17 +234,15 @@ def cmd_inspect(args, logger, devices):
     from report.generator import generate_report
     from report.excel import generate_excel_report
     from backup.cloud import notify_alert
-    from config import THRESHOLDS
 
     logger.info(f"开始巡检 {len(devices)} 台设备...")
     metrics = inspect_all(devices, max_workers=getattr(args, "workers", 4))
 
-    # 触发告警推送（钉钉）
+    # 触发告警推送（使用 inspector.py 已计算好的结构化告警）
     for dev in metrics:
-        for key, threshold in THRESHOLDS.items():
-            val = dev.get(key)
-            if val is not None and val >= threshold:
-                notify_alert(dev["name"], key, val, threshold)
+        for alert in dev.get("alerts", []):
+            if isinstance(alert, dict):
+                notify_alert(dev["name"], alert["metric"], alert["value"], alert["threshold"])
 
     # 生成报告
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -260,6 +261,47 @@ def cmd_inspect(args, logger, devices):
     logger.info(f"Excel 巡检报告 → {excel_path}")
 
 
+def _load_devices_from_source(source: str, source_file: str | None = None):
+    """根据 --source 参数加载设备列表（yaml 或 excel），统一转为标准格式。"""
+    if source == "excel":
+        excel_path = source_file or "devices.xlsx"
+        try:
+            from src.excel_reader import read_devices
+            return read_devices(excel_path)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"设备列表文件不存在: {excel_path}\n"
+                f"请创建 {excel_path}（首行: name | ip | port | device_type | username | password）\n"
+                f"或使用 --source yaml 从 devices.yaml 加载。"
+            )
+        except ValueError as e:
+            raise ValueError(str(e))
+
+    # 默认 yaml
+    try:
+        return load_devices()
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            "设备配置文件不存在: devices.yaml\n"
+            "请复制 devices.example.yaml 为 devices.yaml 并填写真实信息，\n"
+            "或使用 --source excel --source-file devices.xlsx 从 Excel 加载。"
+        )
+    except ValueError:
+        raise  # load_devices() 的消息已包含 Excel 提示，直接上抛
+
+
+def _add_source_args(parser):
+    """为子命令添加 --source / --source-file 参数"""
+    parser.add_argument(
+        "--source", choices=["yaml", "excel"], default="yaml",
+        help="设备列表来源：yaml（默认 devices.yaml）或 excel（devices.xlsx）",
+    )
+    parser.add_argument(
+        "--source-file", default=None,
+        help="当 --source excel 时的 .xlsx 路径（默认 devices.xlsx）",
+    )
+
+
 def main():
     # 加载 .env（必须在日志之前）
     load_dotenv()
@@ -275,14 +317,17 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="可用子命令")
 
     # 子命令 run：连设备推配置
-    subparsers.add_parser("run", help="连接设备，推配置，保存快照")
+    run_parser = subparsers.add_parser("run", help="连接设备，推配置，保存快照")
+    _add_source_args(run_parser)
 
     # 子命令 diff：生成差异报告
-    subparsers.add_parser("diff", help="对最新 before/after 快照生成 HTML 差异报告")
+    diff_parser = subparsers.add_parser("diff", help="对最新 before/after 快照生成 HTML 差异报告")
+    _add_source_args(diff_parser)
 
     # 子命令 inspect：设备巡检
     inspect_parser = subparsers.add_parser("inspect", help="巡检所有设备，生成 HTML + Excel 报告")
     inspect_parser.add_argument("--workers", type=int, default=4, help="并发线程数（默认 4）")
+    _add_source_args(inspect_parser)
 
     # 子命令 device：管理设备列表
     dev_parser = subparsers.add_parser("device", help="管理 devices.yaml 设备列表")
@@ -324,9 +369,11 @@ def main():
         cmd_command(args, logger)
         return
 
-    # ── 其余子命令需要加载 devices.yaml + commands.yaml ────────────────────
+    # ── 其余子命令需要加载设备列表（yaml 或 excel）────────────────────
+    source = getattr(args, "source", "yaml")
+    source_file = getattr(args, "source_file", None)
     try:
-        devices  = load_devices()
+        devices  = _load_devices_from_source(source, source_file)
         commands = load_commands()
     except (FileNotFoundError, ValueError) as e:
         logger.error(str(e))
@@ -335,10 +382,10 @@ def main():
     # 校验 devices 结构（manager 已做基础校验，这里补充字段完整性）
     for dev in devices:
         if not isinstance(dev, dict) or "name" not in dev or "connection" not in dev:
-            logger.error(f"devices.yaml 中某设备缺少 name 或 connection 字段: {dev}")
+            logger.error(f"设备列表中某设备缺少 name 或 connection 字段: {dev}")
             return
         if not dev.get("name", "").strip():
-            logger.error(f"devices.yaml 中存在设备名为空的条目: {dev}")
+            logger.error(f"设备列表中存在设备名为空的条目: {dev}")
             return
         conn = dev["connection"]
         for field in ("device_type", "ip", "username", "password", "port"):
