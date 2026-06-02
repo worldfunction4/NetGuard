@@ -260,6 +260,7 @@ TCP 可达性探测（socket.create_connection）
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-06-01 | v1.3 | 新增CLI命令，修复代码冗余问题 |
 | 2026-05-27 | v1.2 | 新增 `.env.example` 环境变量文档；统一 README Shell 语法为 PowerShell |
 | 2026-05-27 | v1.1 | 合并 config 模块；集成 `--source excel` 设备列表加载；消除重复代码；修复错误消息缺失 Excel 提示 |
 | 2026-05-26 | v1.0 | Docker 支持；`.env` 自动加载；项目结构重构；驱动抽象层完善 |
