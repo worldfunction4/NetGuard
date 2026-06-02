@@ -6,10 +6,11 @@ backups_config/
 reports/
 logs/
 
-# Python 编译缓存
+# Python 编译缓存 & 构建产物
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 
 # 设备凭据（含真实 IP 和密码，不入库）
 devices.yaml

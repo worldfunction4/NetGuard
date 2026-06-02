@@ -98,7 +98,7 @@ def cmd_device(args, logger):
         try:
             add_device(entry)
             logger.info(f"设备 '{entry['name']}' 添加成功")
-        except (ValueError, Exception) as e:
+        except Exception as e:
             logger.error(str(e))
 
     elif action == "update":
@@ -159,7 +159,7 @@ def cmd_command(args, logger):
         try:
             add_command(section, cmd)
             logger.info(f"命令 '{cmd}' 已添加到 [{section}] 区块")
-        except (ValueError, Exception) as e:
+        except Exception as e:
             logger.error(str(e))
 
     elif action == "remove":
@@ -168,7 +168,7 @@ def cmd_command(args, logger):
         try:
             remove_command(section, cmd)
             logger.info(f"命令 '{cmd}' 已从 [{section}] 区块移除")
-        except (ValueError, Exception) as e:
+        except Exception as e:
             logger.error(str(e))
 
 

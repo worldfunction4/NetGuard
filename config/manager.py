@@ -156,7 +156,7 @@ def add_command(section: str, cmd: str, path: Path = COMMANDS_FILE) -> None:
     _validate_section(section)
     try:
         commands = load_commands(path)
-    except ValueError:
+    except (FileNotFoundError ,ValueError):
         commands = {s: [] for s in _CMD_SECTIONS}
 
     cmds: list = commands.setdefault(section, [])

@@ -24,20 +24,20 @@ def _safe_name(name: str) -> str:
 
 def save_result(device_name: str, content: str, suffix: str = "", base_dir: Optional[Union[str, Path]] = None, run_id: Optional[str] = None):
 
-      _now = datetime.now()
-      timestamp = run_id if run_id else _now.strftime("%Y-%m-%d_%H-%M-%S_") + f"{_now.microsecond:06d}"
+    _now = datetime.now()
+    timestamp = run_id if run_id else _now.strftime("%Y-%m-%d_%H-%M-%S_") + f"{_now.microsecond:06d}"
 
-      # 净化设备名，防止路径穿越（如 "../../etc/passwd"）
-      safe_device_name = _safe_name(device_name)
+    # 净化设备名，防止路径穿越（如 "../../etc/passwd"）
+    safe_device_name = _safe_name(device_name)
 
-      # 自动创建设备目录,其中exist_ok=True 表示目录已存在也不报错
-      if base_dir is None:
-          base_dir = BACKUP_DIR
-      device_dir = Path(base_dir) / safe_device_name
-      device_dir.mkdir(parents=True, exist_ok=True)  # 自动创建目录，不存在时不报错
-      # 文件名带 suffix（before/after），方便配对查看
-      filename = f"{timestamp}_{suffix}.txt" if suffix else f"{timestamp}.txt"
-      file_path = device_dir / filename
-      file_path.write_text(content, encoding="utf-8")
+    # 自动创建设备目录,其中exist_ok=True 表示目录已存在也不报错
+    if base_dir is None:
+        base_dir = BACKUP_DIR
+    device_dir = Path(base_dir) / safe_device_name
+    device_dir.mkdir(parents=True, exist_ok=True)  # 自动创建目录，不存在时不报错
+    # 文件名带 suffix（before/after），方便配对查看
+    filename = f"{timestamp}_{suffix}.txt" if suffix else f"{timestamp}.txt"
+    file_path = device_dir / filename
+    file_path.write_text(content, encoding="utf-8")
 
-      return file_path
+    return file_path

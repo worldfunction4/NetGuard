@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netguard"
+version = "1.0.0"
+description = "网络设备自动化运维工具"
+requires-python = ">=3.10"
+dependencies = [
+    "netmiko>=4.0.0",
+    "pyyaml>=6.0",
+    "openpyxl>=3.1",
+    "jinja2>=3.1",
+    "requests>=2.31",
+    "oss2>=2.18",
+    "python-dotenv>=1.0",
+    "tenacity",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+netguard = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "logger"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests", "tests.*"]

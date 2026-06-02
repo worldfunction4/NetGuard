@@ -44,6 +44,75 @@ python main.py run          # 模拟备份
 python main.py diff         # 生成差异报告
 python main.py inspect      # 执行巡检
 ```
+### 安装为 CLI 命令
+
+```powershell
+# 激活虚拟环境
+.venv\Scripts\Activate.ps1
+
+# 安装为全局命令（-e = editable 开发模式，改代码立即生效）
+pip install -e .
+
+# 验证
+netguard --help
+```
+
+> 安装完成后，`netguard` 可以替代 `python main.py`，示例：`netguard run`。
+
+### 卸载
+
+卸载方式取决于你的安装方式。**请按你实际使用的安装方式选择对应的清理步骤。**
+
+#### 方式 A：pip 安装的 CLI 命令
+
+```powershell
+# 1. 退出虚拟环境（如果已激活）
+deactivate
+
+# 2. 卸载 CLI 命令
+pip uninstall netguard -y
+
+# 3. 删除虚拟环境（可选——如果 .venv 不再用于其他项目）
+Remove-Item -Recurse .venv
+
+# 4. 删除运行时产生的文件（可选——备份、报告、日志）
+Remove-Item -Recurse backups_config, reports, logs -ErrorAction SilentlyContinue
+
+# 5. 删除整个项目目录（可选——彻底清除）
+cd ..
+Remove-Item -Recurse NetGuard
+```
+
+> 第 2 步是核心，做完就移除了 `netguard` 命令。第 3~5 步按需执行：留代码日后重装，还是彻底删干净。
+
+#### 方式 B：Docker 安装
+
+```powershell
+# 1. 停止并删除容器（如果正在运行）
+docker compose down
+
+# 2. 删除 Docker 镜像
+docker image rm netguard-netguard
+# 如果镜像名不确定，用 docker images 查看
+
+# 3. 删除运行时产生的文件（已在本地目录挂载）
+Remove-Item -Recurse backups_config, reports, logs -ErrorAction SilentlyContinue
+
+# 4. 彻底清除——删除项目目录
+cd ..
+Remove-Item -Recurse NetGuard
+```
+
+> Docker 镜像名默认为 `netguard-netguard`。可用 `docker images | findstr netguard` 确认。
+
+#### 方式 C：仅用 `python main.py`（未执行过 `pip install`）
+
+```powershell
+# 直接删除项目目录即可，没有系统级残留
+cd ..
+Remove-Item -Recurse NetGuard
+```
+
 
 ### Docker 方式（无需安装 Python 环境）
 
