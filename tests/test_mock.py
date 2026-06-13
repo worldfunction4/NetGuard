@@ -134,7 +134,8 @@ class TestInspectDeviceMock:
         from report.inspector import inspect_device
         # 只有真实设备类型（非 mock）才会触发不可达逻辑
         device = self._make_device("huawei_telnet")  # 真实类型 + 假 IP
-        with patch("report.inspector.check_reachable", return_value=False):
+        with patch("report.inspector.check_reachable", return_value=False), \
+                patch("report.inspector.is_mock_mode", return_value=False):
             result = inspect_device(device)
         assert result["status"] == "unreachable"
 

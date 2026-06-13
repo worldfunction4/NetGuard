@@ -1,5 +1,6 @@
 """驱动层单元测试——使用 mock 替代真实网络连接"""
 
+import os
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock, patch
 class TestGetDriver:
     """测试 get_driver 能否根据 device_type 返回正确的驱动实例"""
 
+    @patch.dict(os.environ, {"NETGUARD_MOCK": ""})
     def test_huawei_vrp_returns_huawei_driver(self):
         from devices.base import get_driver
         from devices.huawei import HuaweiDriver
@@ -17,6 +19,7 @@ class TestGetDriver:
         driver = get_driver(conn)
         assert isinstance(driver, HuaweiDriver)
 
+    @patch.dict(os.environ, {"NETGUARD_MOCK": ""})
     def test_cisco_ios_returns_cisco_driver(self):
         from devices.base import get_driver
         from devices.cisco import CiscoDriver
@@ -25,6 +28,7 @@ class TestGetDriver:
         driver = get_driver(conn)
         assert isinstance(driver, CiscoDriver)
 
+    @patch.dict(os.environ, {"NETGUARD_MOCK": ""})
     def test_cisco_xe_returns_cisco_driver(self):
         from devices.base import get_driver
         from devices.cisco import CiscoDriver
@@ -33,6 +37,7 @@ class TestGetDriver:
         driver = get_driver(conn)
         assert isinstance(driver, CiscoDriver)
 
+    @patch.dict(os.environ, {"NETGUARD_MOCK": ""})
     def test_unknown_device_type_raises_value_error(self):
         from devices.base import get_driver
 
@@ -40,6 +45,7 @@ class TestGetDriver:
         with pytest.raises(ValueError, match="不支持的设备类型"):
             get_driver(conn)
 
+    @patch.dict(os.environ, {"NETGUARD_MOCK": ""})
     def test_empty_device_type_raises_value_error(self):
         from devices.base import get_driver
 
