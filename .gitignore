@@ -14,6 +14,7 @@ __pycache__/
 
 # 设备凭据（含真实 IP 和密码，不入库）
 devices.yaml
+devices.xlsx
 secrets.yaml
 .env
 

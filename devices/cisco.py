@@ -35,7 +35,11 @@ class CiscoDriver(BaseDriver):
         cpu = _extract_int(cpu_text, r"five seconds:\s*(\d+)%")
         mem = _calc_mem_percent(mem_text)
         up = len(re.findall(r"\bup\s+up\b", intf_text))
-        down = len(re.findall(r"administratively down\s+down\b", intf_text))
+        # 协议 down 都计入，且每条接口只匹配一次：down down / administratively down down / up down
+        down = len(re.findall(
+            r"(?:administratively\s+down|\bdown|\bup)\s+down\b",
+            intf_text,
+        ))
 
         return {"cpu_percent": cpu, "memory_percent": mem, "interfaces_up": up, "interfaces_down": down}
 
@@ -46,7 +50,8 @@ def _extract_int(text: str, pattern: str) -> int | None:
 
 
 def _calc_mem_percent(text: str) -> int | None:
-    m = re.search(r"Total:\s*(\d+),\s*Used:\s*(\d+)", text)
+    # 逗号可选：有的 IOS 是 "Total: 123, Used: 456"，有的是 "Total: 123 Used: 456"
+    m = re.search(r"Total:\s*(\d+),?\s*Used:\s*(\d+)", text)
     if m:
         total, used = int(m.group(1)), int(m.group(2))
         return round(used / total * 100) if total else None

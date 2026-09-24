@@ -3,3 +3,8 @@ config:
 
 show:
  - dis vlan
+
+cisco:
+  config: []
+  show:
+    - show vlan brief

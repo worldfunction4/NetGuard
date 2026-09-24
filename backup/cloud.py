@@ -8,15 +8,17 @@ from backup.notify import send_alert_if_configured
 logger = logging.getLogger("NetGuard")
 
 
-def sync_backup_to_cloud(local_path: str) -> bool:
+def sync_backup_to_cloud(local_path: str | None = None, files: list | None = None) -> bool:
     """
     将本地备份文件或目录上传到阿里云 OSS。
     OSS 凭据从环境变量读取（见 .env）。
 
-    无 OSS 配置时静默跳过，返回 False。
+    files 不为 None 时只上传这些文件，不再扫描整个备份目录。
+    无 OSS 配置时静默跳过，返回 False，不抛异常。
 
     Args:
-        local_path: 要上传的本地文件或目录路径
+        local_path: 要上传的本地文件或目录路径（未传 files 时使用）
+        files:      本次新保存的文件路径列表
 
     Returns:
         同步成功返回 True，未配置或失败返回 False
@@ -27,8 +29,26 @@ def sync_backup_to_cloud(local_path: str) -> bool:
     if client is None:
         return False
 
-    local = Path(local_path)
     remote_prefix = "netguard/backups"
+
+    # 只上传调用方给出的文件，避免 rglob 重传历史备份
+    if files is not None:
+        uploaded = 0
+        for raw in files:
+            local = Path(raw)
+            if not local.is_file():
+                logger.error(f"sync_backup_to_cloud: 路径不存在 {raw}")
+                continue
+            remote = f"{remote_prefix}/{local.parent.name}/{local.name}"
+            if client.upload(str(local), remote):
+                uploaded += 1
+        return uploaded > 0
+
+    if not local_path:
+        logger.error("sync_backup_to_cloud: 未指定上传路径")
+        return False
+
+    local = Path(local_path)
 
     if local.is_dir():
         count = client.upload_dir(str(local), remote_prefix)

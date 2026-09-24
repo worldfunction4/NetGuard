@@ -1,5 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import argparse
+import getpass
+import sys
 from backup.collector import work_one
 from diff.comparator import generate_html_diff
 from backup.storage import _safe_name
@@ -12,21 +14,51 @@ from config.manager import (
 )
 
 
+def _commands_for_device(device: dict, commands: dict) -> tuple[list, list]:
+    """按 device_type 选命令。含 cisco 的设备只用 cisco 节，不用顶层华为命令。"""
+    device_type = str(device.get("connection", {}).get("device_type", ""))
+    if "cisco" in device_type.lower():
+        cisco = commands.get("cisco")
+        if not isinstance(cisco, dict):
+            return [], []
+        return list(cisco.get("config") or []), list(cisco.get("show") or [])
+    return list(commands.get("config") or []), list(commands.get("show") or [])
+
+
 def cmd_run(args, logger, devices, commands):
     """子命令 run：连接设备，推配置，保存 before/after 快照"""
-    config_commands = commands["config"]
-    show_commands = commands["show"]
+    failed = 0
+    saved_paths = []
+    warned_missing_cisco = False
 
     with ThreadPoolExecutor(max_workers=2) as exe:
-        futures = [exe.submit(work_one, dev, config_commands, show_commands) for dev in devices]
+        futures = []
+        for dev in devices:
+            device_type = str(dev.get("connection", {}).get("device_type", ""))
+            if "cisco" in device_type.lower() and not isinstance(commands.get("cisco"), dict):
+                if not warned_missing_cisco:
+                    logger.warning(
+                        "commands.yaml 没有 cisco 节，Cisco 设备使用空命令列表，不会下发华为命令"
+                    )
+                    warned_missing_cisco = True
+            config_commands, show_commands = _commands_for_device(dev, commands)
+            futures.append(exe.submit(work_one, dev, config_commands, show_commands))
+
         for future in as_completed(futures):
             result = future.result()
-            if result:
-                logger.info(result)
+            saved_paths.extend(result.get("saved") or [])
+            if result.get("ok"):
+                logger.info(result.get("message", ""))
+            else:
+                failed += 1
+                logger.error(result.get("message", "设备执行失败"))
 
-    # 备份完成后同步到云端（如果配置了 OSS）
+    # 只上传本次新保存的文件；无 OSS 凭据时返回 False，不抛异常
     from backup.cloud import sync_backup_to_cloud
-    sync_backup_to_cloud(str(BACKUP_DIR))
+    sync_backup_to_cloud(files=saved_paths)
+
+    if failed:
+        sys.exit(1)
 
 
 def _find_latest_complete_pair(device_dir):
@@ -105,19 +137,37 @@ def cmd_device(args, logger):
         name = args.name
         field = args.field
         value = args.value
-        # port 字段强制转 int
-        if field == "port":
-            try:
-                value = int(value)
-            except ValueError:
-                logger.error(f"port 必须是整数，当前值: {value!r}")
+        # 密码不从命令行取值，避免进入 shell 历史和进程列表
+        if field == "password":
+            if value is not None:
+                logger.warning("命令行密码已忽略，请在提示中输入")
+            value = getpass.getpass("密码（输入 q 取消）: ").strip()
+            if value.lower() == "q":
+                print("取消操作")
                 return
+            if not value:
+                print("密码不能为空")
+                return
+        else:
+            if value is None:
+                logger.error(f"字段 '{field}' 缺少新值，请在命令行提供")
+                return
+            # port 字段强制转 int
+            if field == "port":
+                try:
+                    value = int(value)
+                except ValueError:
+                    logger.error(f"port 必须是整数，当前值: {value!r}")
+                    return
         # connection 层字段和顶层字段
         conn_fields = {"ip", "port", "device_type", "username", "password", "timeout"}
         updates = {"connection": {field: value}} if field in conn_fields else {field: value}
         try:
             update_device(name, updates)
-            logger.info(f"设备 '{name}' 字段 '{field}' 已更新为 {value!r}")
+            if field == "password":
+                logger.info(f"设备 '{name}' 字段 password 已更新")
+            else:
+                logger.info(f"设备 '{name}' 字段 '{field}' 已更新为 {value!r}")
         except (KeyError, ValueError) as e:
             logger.error(str(e))
 
@@ -203,9 +253,14 @@ def _prompt_device_entry() -> dict | None:
     username = ask("用户名", "admin")
     if username is None:
         return None
-    password = ask("密码")
-    if password is None:
+    # 密码不回显；输入 q 取消，空密码拒绝
+    password = getpass.getpass("  密码: ")
+    if password.strip().lower() == "q":
         return None
+    if not password.strip():
+        print("  密码不能为空")
+        return None
+    password = password.strip()
     location = ask("位置（可选）", "") or ""
     role = ask("角色（可选，如 core / access）", "") or ""
 
@@ -337,7 +392,7 @@ def main():
     dev_update = dev_sub.add_parser("update", help="修改设备某个字段")
     dev_update.add_argument("name",  help="要修改的设备名")
     dev_update.add_argument("field", help="字段名（如 ip / port / username / password / location）")
-    dev_update.add_argument("value", help="新值")
+    dev_update.add_argument("value", nargs="?", help="新值（修改 password 时请在提示中输入）")
     dev_remove = dev_sub.add_parser("remove", help="删除一台设备")
     dev_remove.add_argument("name", help="要删除的设备名")
 
@@ -370,14 +425,22 @@ def main():
         return
 
     # ── 其余子命令需要加载设备列表（yaml 或 excel）────────────────────
+    # diff / inspect 不读命令表；只有 run 才 load_commands()
     source = getattr(args, "source", "yaml")
     source_file = getattr(args, "source_file", None)
     try:
-        devices  = _load_devices_from_source(source, source_file)
-        commands = load_commands()
+        devices = _load_devices_from_source(source, source_file)
     except (FileNotFoundError, ValueError) as e:
         logger.error(str(e))
         return
+
+    commands = None
+    if args.command == "run":
+        try:
+            commands = load_commands()
+        except (FileNotFoundError, ValueError) as e:
+            logger.error(str(e))
+            return
 
     # 校验 devices 结构（manager 已做基础校验，这里补充字段完整性）
     for dev in devices:

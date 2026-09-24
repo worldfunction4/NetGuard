@@ -1,3 +1,4 @@
+import re
 from netmiko import ConnectHandler
 from devices.base import BaseDriver, _extract_int
 from devices.try_connect import connect_with_retry
@@ -10,8 +11,13 @@ class HuaweiDriver(BaseDriver):
         # connect_with_retry 只负责重连逻辑，实际连接动作封装在 lambda 里
         # 设备名从 connection 字典里取，只用于日志
         device_name = self.connection.get("host") or self.connection.get("ip", "")
+        # 复制后再改类型名，避免改掉调用方原来的字典
+        params = dict(self.connection)
+        if params.get("device_type") == "huawei_ssh":
+            # Netmiko SSH 类型名是 huawei；huawei / huawei_telnet / huawei_vrp 保持原样
+            params["device_type"] = "huawei"
         self._conn = connect_with_retry(
-            lambda: ConnectHandler(**self.connection),
+            lambda: ConnectHandler(**params),
             device_name=device_name,
         )
 

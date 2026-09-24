@@ -61,7 +61,8 @@
 <div class="container">
 
     {# ── 汇总卡片 ─────────────────────────────────────────────────── #}
-    {% set ok_count      = devices | selectattr("status", "eq", "ok") | list | length %}
+    {# 超阈值设备 status 仍是 ok，正常只计「ok 且没有告警」，与 Excel 汇总口径一致 #}
+    {% set ok_count      = devices | selectattr("status", "eq", "ok") | rejectattr("alerts") | list | length %}
     {% set warn_count    = devices | selectattr("alerts") | list | length %}
     {% set unreach_count = devices | selectattr("status", "eq", "unreachable") | list | length %}
     {% set err_count     = devices | selectattr("status", "eq", "error") | list | length %}
@@ -89,7 +90,7 @@
         <ul>
         {% for dev in alert_devices %}
             {% for alert in dev.alerts %}
-            <li>{{ dev.name }}（{{ dev.ip }}）— {{ alert }}</li>
+            <li>{{ dev.name }}（{{ dev.ip }}）— {% if alert is mapping %}{{ alert.text }}{% else %}{{ alert }}{% endif %}</li>
             {% endfor %}
         {% endfor %}
         </ul>

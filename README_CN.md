@@ -12,8 +12,8 @@
 | 配置版本对比 | difflib 生成 HTML 差异报告，红删绿增，变更可追溯 |
 | 设备巡检 | 采集 CPU / 内存 / 接口状态，生成 HTML + Excel 报告 |
 | 阈值告警 | 超阈值自动记录日志，可选钉钉 Webhook 推送 |
-| 多云集成 | 阿里云 OSS 备份同步（可选），无凭据时静默跳过 |
-| 自动重连 | 网络抖动时自动重试，最大 5 次，认证失败不重连 |
+| 多云集成 | 阿里云 OSS 备份同步（可选）。只上传本次 `run` 新保存的文件，无凭据时静默跳过 |
+| 自动重连 | 超时和 `OSError` 最多重试 5 次。认证失败、非法设备类型等配置错误不重试 |
 | Mock 演示 | `NETGUARD_MOCK=1` 无设备也能完整演示 |
 
 ## 快速开始
@@ -149,14 +149,16 @@ diff [--source yaml|excel]           生成 HTML 配置差异报告
 inspect [--workers N] [--source ...] 巡检所有设备，生成 HTML + Excel
 device list                          列出所有设备
 device add                           交互式添加设备
-device update <名> <字段> <值>        修改设备字段
+device update <名> <字段> [值]       修改设备字段（password 在提示中输入，不回显）
 device remove <名>                    删除设备
 command list                         列出所有命令
-command add config/show <命令>        添加配置 / 查看命令
-command remove config/show <命令>     删除命令
+command add config/show <命令>        添加华为配置 / 查看命令
+command remove config/show <命令>     删除华为命令
 ```
 
-> `--source excel --source-file devices.xlsx` 可从 Excel 加载设备列表（首行：name | ip | port | device_type | username | password），默认从 `devices.yaml` 加载。
+> `--source excel --source-file devices.xlsx` 可从 Excel 加载设备列表（首行：name | ip | port | device_type | username | password），默认从 `devices.yaml` 加载。`devices.xlsx` 含密码，已加入 `.gitignore`。
+>
+> `commands.yaml` 顶层 `config` / `show` 只下发给华为设备。Cisco 使用同文件中的 `cisco` 节。`diff` 和 `inspect` 不读取命令表。任一设备失败时，`run` 的退出码为 1。
 
 ## Mock 模式
 
@@ -210,7 +212,7 @@ NetGuard/
 │   ├── huawei.py          # 华为 VRP 驱动
 │   ├── cisco.py           # Cisco IOS 驱动
 │   ├── mock.py            # Mock 驱动（无设备演示）
-│   └── try_connect.py     # 重连机制（最大 5 次，7 秒上限）
+│   └── try_connect.py     # 重连（网络错误最多 5 次；配置错误不重试）
 ├── backup/
 │   ├── collector.py       # 配置采集（连接 → before → 推命令 → after）
 │   ├── storage.py         # 文件存储（按设备/时间戳组织目录）
@@ -230,8 +232,8 @@ NetGuard/
 │   └── manager.py           # 设备和命令的 YAML 配置管理
 ├── src/
 │   └── excel_reader.py      # Excel 设备列表读取（--source excel 时使用）
-├── tests/                 # 73 项 pytest 单元测试
-├── commands.yaml          # 配置 / 查看命令示例
+├── tests/                 # 109 项 pytest 单元测试
+├── commands.yaml          # 华为命令在顶层，Cisco 命令在 cisco 节
 ├── devices.example.yaml   # 设备列表示例
 ├── .env.example           # 环境变量配置示例（钉钉/OSS/Mock）
 └── requirements.txt       # 项目依赖
@@ -248,20 +250,24 @@ argparse · ThreadPoolExecutor · pytest · PyYAML
 
 ```
 TCP 可达性探测（socket.create_connection）
-  → 不可达直接跳过，不浪费后续资源
+  → 不可达记为失败，不再连接该设备
 
-连接层异常（NetmikoTimeoutException / NetMikoAuthenticationException）
-  → 超时自动重连（最多 5 次）
-  → 认证失败立即上抛（不重连，避免锁定账号）
+连接层异常
+  → 超时和 OSError 自动重试，最多 5 次
+  → 重试之间的等待合计不超过 4 秒，不含单次连接的 timeout
+  → 认证失败、ValueError 等配置错误立即上抛，不重试
 
-业务层异常（NetmikoBaseException / Exception）
-  → 分类捕获，单台设备失败不影响其他设备继续执行
+业务层
+  → 配置回显含 Error:、Unrecognized command、Invalid input 时，该设备记为失败
+  → 单台失败不影响其他设备；只要有失败，run 退出码为 1
+  → OSS 只上传本次新保存的快照
 ```
 
 ## 更新日志
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-09-24 | — | 修复华为巡检缺少 `re`、密码写入日志；配置失败时 `run` 退出码为 1；Cisco 不再接收华为命令；OSS 只上传本次新文件 |
 | 2026-06-01 | v1.3 | 新增CLI命令，修复代码冗余问题 |
 | 2026-05-27 | v1.2 | 新增 `.env.example` 环境变量文档；统一 README Shell 语法为 PowerShell |
 | 2026-05-27 | v1.1 | 合并 config 模块；集成 `--source excel` 设备列表加载；消除重复代码；修复错误消息缺失 Excel 提示 |
@@ -271,5 +277,5 @@ TCP 可达性探测（socket.create_connection）
 | 2026-05-23 | v0.7 | difflib HTML 配置差异报告；并发备份；备份对比功能 |
 | 2026-05-22 | v0.5 | 基础备份模块；设备驱动抽象层（华为 + Cisco + Mock）；项目初始化 |
 
-> 运行 `git pull` 获取最新版本。`devices.yaml` 和 `.env` 已在 `.gitignore` 中，pull 不会被覆盖。
+> 运行 `git pull` 获取最新版本。`devices.yaml`、`devices.xlsx` 和 `.env` 已在 `.gitignore` 中，pull 不会被覆盖。
 
