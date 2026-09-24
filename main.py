@@ -1,108 +1,34 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import argparse
 import getpass
 import sys
-from backup.collector import work_one
-from diff.comparator import generate_html_diff
-from backup.storage import _safe_name
 from logger import setup_logger
-from config import BACKUP_DIR, REPORT_DIR, load_dotenv
+from config import load_dotenv
+from operations import run_backup, run_diff, run_inspect
 from config.manager import (
     load_devices, load_commands,
     add_device, update_device, remove_device, list_devices,
     add_command, remove_command, list_commands,
-    COMMAND_SECTIONS,
+    COMMAND_SECTIONS, validate_devices,
 )
-
-
-def _commands_for_device(device: dict, commands: dict) -> tuple[list, list]:
-    """按 device_type 选命令。含 cisco 的设备只用 cisco 节，不用顶层华为命令。"""
-    device_type = str(device.get("connection", {}).get("device_type", ""))
-    if "cisco" in device_type.lower():
-        cisco = commands.get("cisco")
-        if not isinstance(cisco, dict):
-            return [], []
-        return list(cisco.get("config") or []), list(cisco.get("show") or [])
-    return list(commands.get("config") or []), list(commands.get("show") or [])
 
 
 def cmd_run(args, logger, devices, commands):
     """子命令 run：连接设备，推配置，保存 before/after 快照"""
-    failed = 0
-    saved_paths = []
-    warned_missing_cisco = False
-
-    with ThreadPoolExecutor(max_workers=2) as exe:
-        futures = []
-        for dev in devices:
-            device_type = str(dev.get("connection", {}).get("device_type", ""))
-            if "cisco" in device_type.lower() and not isinstance(commands.get("cisco"), dict):
-                if not warned_missing_cisco:
-                    logger.warning(
-                        "commands.yaml 没有 cisco 节，Cisco 设备使用空命令列表，不会下发华为命令"
-                    )
-                    warned_missing_cisco = True
-            config_commands, show_commands = _commands_for_device(dev, commands)
-            futures.append(exe.submit(work_one, dev, config_commands, show_commands))
-
-        for future in as_completed(futures):
-            result = future.result()
-            saved_paths.extend(result.get("saved") or [])
-            if result.get("ok"):
-                logger.info(result.get("message", ""))
-            else:
-                failed += 1
-                logger.error(result.get("message", "设备执行失败"))
-
-    # 只上传本次新保存的文件；无 OSS 凭据时返回 False，不抛异常
-    from backup.cloud import sync_backup_to_cloud
-    sync_backup_to_cloud(files=saved_paths)
-
-    if failed:
+    summary = run_backup(devices, commands, logger)
+    for item in summary["results"]:
+        if item["ok"]:
+            logger.info(item.get("message", ""))
+        else:
+            logger.error(item.get("message", "设备执行失败"))
+    if summary["failed"] > 0:
         sys.exit(1)
-
-
-def _find_latest_complete_pair(device_dir):
-    """在设备备份目录中找到最新的 before/after 完整配对。
-
-    策略：从最新的 before 文件往前找，直到找到配对的 after 文件为止。
-    这样即使最近一次 run 只保存了 before（run 中途失败），
-    也能自动回退到上一次成功的完整配对，而不是直接跳过。
-
-    返回 (before_path, after_path)，找不到则返回 (None, None)。
-    """
-    before_files = sorted(device_dir.glob("*_before.txt"), reverse=True)
-    for before_file in before_files:
-        timestamp_prefix = before_file.name.replace("_before.txt", "")
-        after_file = device_dir / f"{timestamp_prefix}_after.txt"
-        if after_file.exists():
-            return before_file, after_file
-    return None, None
 
 
 def cmd_diff(_args, logger, devices):
     """子命令 diff：为每台设备找最新完整配对，生成 HTML 差异报告"""
-    for dev in devices:
-        name = dev["name"]
-        # 使用 _safe_name 与 storage.py 保持一致的目录命名
-        safe = _safe_name(name)
-        device_dir = BACKUP_DIR / safe
-
-        if not device_dir.exists():
-            logger.warning(f"{name} 没有备份目录，跳过")
-            continue
-
-        before_file, after_file = _find_latest_complete_pair(device_dir)
-
-        if before_file is None or after_file is None:
-            logger.warning(f"{name} 找不到任何完整的 before/after 配对，跳过")
-            continue
-
-        before_text = before_file.read_text(encoding="utf-8")
-        after_text = after_file.read_text(encoding="utf-8")
-
-        report_path = generate_html_diff(name, before_text, after_text)
-        logger.info(f"{name} 差异报告 → {report_path}")
+    for item in run_diff(devices, logger):
+        if item["ok"]:
+            logger.info(f"{item['name']} 差异报告 → {item['report']}")
 
 
 def cmd_device(args, logger):
@@ -295,36 +221,7 @@ def _prompt_device_entry() -> dict | None:
 
 def cmd_inspect(args, logger, devices):
     """子命令 inspect：并发巡检所有设备，生成 HTML + Excel 报告"""
-    from datetime import datetime
-    from report.inspector import inspect_all
-    from report.generator import generate_report
-    from report.excel import generate_excel_report
-    from backup.cloud import notify_alert
-
-    logger.info(f"开始巡检 {len(devices)} 台设备...")
-    metrics = inspect_all(devices, max_workers=getattr(args, "workers", 4))
-
-    # 触发告警推送（使用 inspector.py 已计算好的结构化告警）
-    for dev in metrics:
-        for alert in dev.get("alerts", []):
-            if isinstance(alert, dict):
-                notify_alert(dev["name"], alert["metric"], alert["value"], alert["threshold"])
-
-    # 生成报告
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-    html_path = str(REPORT_DIR / f"inspect_{timestamp}.html")
-    generate_report(
-        {"devices": metrics, "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
-        "inspect.html",
-        html_path,
-    )
-    logger.info(f"HTML 巡检报告 → {html_path}")
-
-    excel_path = str(REPORT_DIR / f"inspect_{timestamp}.xlsx")
-    generate_excel_report(metrics, excel_path)
-    logger.info(f"Excel 巡检报告 → {excel_path}")
+    run_inspect(devices, logger, workers=getattr(args, "workers", 4))
 
 
 def _load_devices_from_source(source: str, source_file: str | None = None):
@@ -453,22 +350,12 @@ def main():
             logger.error(str(e))
             return
 
-    # 校验 devices 结构（manager 已做基础校验，这里补充字段完整性）
-    for dev in devices:
-        if not isinstance(dev, dict) or "name" not in dev or "connection" not in dev:
-            logger.error(f"设备列表中某设备缺少 name 或 connection 字段: {dev}")
-            return
-        if not dev.get("name", "").strip():
-            logger.error(f"设备列表中存在设备名为空的条目: {dev}")
-            return
-        conn = dev["connection"]
-        for field in ("device_type", "ip", "username", "password", "port"):
-            if field not in conn:
-                logger.error(f"设备 {dev['name']} 的 connection 缺少必填字段: {field}")
-                return
-        if not isinstance(conn["port"], int):
-            logger.error(f"设备 {dev['name']} 的 port 应为整数，当前值: {conn['port']!r}")
-            return
+    # 校验设备列表。失败只记日志并返回，不把异常抛到进程外，也不改退出码。
+    try:
+        validate_devices(devices)
+    except ValueError as e:
+        logger.error(str(e))
+        return
 
     # 根据子命令分发
     if args.command == "run":

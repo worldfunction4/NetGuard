@@ -29,7 +29,7 @@ dev = [
 netguard = "main:main"
 
 [tool.setuptools]
-py-modules = ["main", "logger"]
+py-modules = ["main", "logger", "operations"]
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -42,7 +42,7 @@ class TestCmdRun:
         def failed(dev, config_commands, show_commands):
             return {"ok": False, "message": "配置失败", "saved": []}
 
-        with patch("main.work_one", side_effect=failed), \
+        with patch("operations.work_one", side_effect=failed), \
                 patch("backup.cloud.sync_backup_to_cloud") as cloud, \
                 pytest.raises(SystemExit) as exc_info:
             cmd_run(SimpleNamespace(), _logger(), [device], HUAWEI_COMMANDS)
@@ -56,7 +56,7 @@ class TestCmdRun:
         def ok(dev, config_commands, show_commands):
             return {"ok": True, "message": "完成", "saved": []}
 
-        with patch("main.work_one", side_effect=ok), \
+        with patch("operations.work_one", side_effect=ok), \
                 patch("backup.cloud.sync_backup_to_cloud", return_value=False):
             try:
                 cmd_run(SimpleNamespace(), _logger(), [device], HUAWEI_COMMANDS)
@@ -81,7 +81,7 @@ class TestCmdRun:
             _device("SW-CS", "cisco_ios"),
         ]
 
-        with patch("main.work_one", side_effect=record), \
+        with patch("operations.work_one", side_effect=record), \
                 patch("backup.cloud.sync_backup_to_cloud", return_value=False) as cloud:
             cmd_run(SimpleNamespace(), _logger(), devices, commands)
 
@@ -102,7 +102,7 @@ class TestCmdRun:
             calls[dev["name"]] = (list(config_commands), list(show_commands))
             return {"ok": True, "message": "完成", "saved": []}
 
-        with patch("main.work_one", side_effect=record), \
+        with patch("operations.work_one", side_effect=record), \
                 patch("backup.cloud.sync_backup_to_cloud", return_value=False):
             cmd_run(
                 SimpleNamespace(),

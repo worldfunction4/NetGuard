@@ -232,6 +232,17 @@ def _validate_device_entry(entry: dict) -> None:
         raise ValueError(f"设备 '{entry['name']}' 的 port 应为整数，当前: {conn['port']!r}")
 
 
+def validate_devices(devices) -> None:
+    """校验整份设备列表。不合法时抛出 ValueError，不改设备数据。"""
+    if not isinstance(devices, list):
+        raise ValueError(f"设备列表应为列表，当前是 {type(devices).__name__}")
+    for entry in devices:
+        _validate_device_entry(entry)
+        name = entry["name"]
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("设备名称去掉空白后不能为空。")
+
+
 def _find_device(devices: list, name: str) -> dict:
     """按名称查找设备，找不到抛出 KeyError。"""
     for d in devices:
