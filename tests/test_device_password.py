@@ -67,7 +67,7 @@ class TestUpdatePassword:
                 patch("main.update_device", side_effect=_write_temp):
             cmd_device(args, logger)
 
-        mock_getpass.assert_called_once_with("密码（输入 q 取消）: ")
+        mock_getpass.assert_called_once_with("密码（直接回车取消）: ")
         saved = load_devices(dev_file)[0]["connection"]["password"]
         assert saved == PROMPT_SECRET
         assert saved != CLI_SECRET
@@ -82,19 +82,26 @@ class TestUpdatePassword:
             _assert_secrets_absent(msg, CLI_SECRET, PROMPT_SECRET)
         _assert_secrets_absent(capsys.readouterr().out, CLI_SECRET, PROMPT_SECRET)
 
-    @pytest.mark.parametrize("typed", ["q", "Q", " q "])
-    def test_q_cancels_without_write(self, tmp_path, typed):
+    @pytest.mark.parametrize("typed,expected", [("q", "q"), ("Q", "Q"), (" q ", "q")])
+    def test_q_is_saved(self, tmp_path, typed, expected, caplog):
         dev_file = _seed(tmp_path)
+        logger = _logger()
         args = SimpleNamespace(
             action="update", name="SW-01", field="password", value=CLI_SECRET,
         )
 
-        with patch("main.getpass.getpass", return_value=typed), \
-                patch("main.update_device") as mock_update:
-            cmd_device(args, _logger())
+        def _write_temp(name, updates, path=None):
+            real_update_device(name, updates, dev_file)
 
-        mock_update.assert_not_called()
-        assert load_devices(dev_file)[0]["connection"]["password"] == OLD_SECRET
+        with caplog.at_level(logging.DEBUG, logger=logger.name), \
+                patch("main.getpass.getpass", return_value=typed), \
+                patch("main.update_device", side_effect=_write_temp):
+            cmd_device(args, logger)
+
+        assert load_devices(dev_file)[0]["connection"]["password"] == expected
+        assert "设备 'SW-01' 字段 password 已更新" in caplog.text
+        assert "已更新为" not in caplog.text
+        _assert_secrets_absent(caplog.text, expected, CLI_SECRET)
 
     @pytest.mark.parametrize("typed", ["", "   "])
     def test_empty_password_not_written(self, tmp_path, typed, capsys):
@@ -144,7 +151,7 @@ class TestAddPassword:
                 patch("main.add_device", side_effect=_write_temp):
             cmd_device(SimpleNamespace(action="add"), logger)
 
-        mock_getpass.assert_called_once_with("  密码: ")
+        mock_getpass.assert_called_once_with("  密码（直接回车取消）: ")
         for call in mock_input.call_args_list:
             assert PROMPT_SECRET not in str(call)
         saved = load_devices(dev_file)[0]["connection"]["password"]
@@ -153,15 +160,16 @@ class TestAddPassword:
         _assert_secrets_absent(caplog.text, PROMPT_SECRET)
         _assert_secrets_absent(capsys.readouterr().out, PROMPT_SECRET)
 
-    @pytest.mark.parametrize("typed", ["q", " Q "])
-    def test_q_cancels_and_returns_none(self, typed):
+    @pytest.mark.parametrize("typed,expected", [("q", "q"), (" Q ", "Q")])
+    def test_q_is_saved_as_password(self, typed, expected):
         with patch("builtins.input", side_effect=self._inputs()) as mock_input, \
                 patch("main.getpass.getpass", return_value=typed):
             result = _prompt_device_entry()
 
-        assert result is None
-        # 密码处取消后，不应再询问位置和角色
-        assert mock_input.call_count == 5
+        assert result is not None
+        assert result["connection"]["password"] == expected
+        # 密码保存后继续询问位置和角色
+        assert mock_input.call_count == 7
 
     @pytest.mark.parametrize("typed", ["", "   "])
     def test_empty_password_returns_none(self, typed, capsys):

@@ -3,7 +3,7 @@
 职责：
   - 读取 devices.yaml / commands.yaml
   - 增加 / 修改 / 删除 设备条目
-  - 增加 / 修改 / 删除 命令条目（config 区 / show 区）
+  - 增加 / 修改 / 删除 命令条目（华为 config/show，以及 cisco.config / cisco.show）
   - 校验结构，空列表或空文件时给出明确错误
 
 所有改动直接写回 YAML 文件，原有注释因 PyYAML 限制无法保留。
@@ -17,8 +17,10 @@ _ROOT = Path(__file__).parent.parent
 DEVICES_FILE  = _ROOT / "devices.yaml"
 COMMANDS_FILE = _ROOT / "commands.yaml"
 
-# commands.yaml 必须包含的两个顶层键
+# 顶层 config/show 给华为。cisco.config / cisco.show 写入 cisco 子字典，不当成顶层键。
 _CMD_SECTIONS = ("config", "show")
+_CISCO_SECTIONS = ("cisco.config", "cisco.show")
+COMMAND_SECTIONS = _CMD_SECTIONS + _CISCO_SECTIONS
 
 # ── 设备管理 ─────────────────────────────────────────────────────────────────
 
@@ -146,11 +148,38 @@ def save_commands(commands: dict, path: Path = COMMANDS_FILE) -> None:
     )
 
 
+def _command_list(commands: dict, section: str, create: bool) -> list:
+    """取出区块对应的命令列表。
+
+    config / show 用顶层列表。cisco.config / cisco.show 用 commands["cisco"] 里的列表。
+    没有 cisco 节且 create 为真时，先建好 {"config": [], "show": []}。
+    """
+    if section in _CMD_SECTIONS:
+        if create:
+            return commands.setdefault(section, [])
+        return commands.get(section, [])
+
+    kind = "config" if section == "cisco.config" else "show"
+    cisco = commands.get("cisco")
+    if not isinstance(cisco, dict):
+        if not create:
+            return []
+        cisco = {"config": [], "show": []}
+        commands["cisco"] = cisco
+    cmds = cisco.get(kind)
+    if not isinstance(cmds, list):
+        if not create:
+            return []
+        cmds = []
+        cisco[kind] = cmds
+    return cmds
+
+
 def add_command(section: str, cmd: str, path: Path = COMMANDS_FILE) -> None:
-    """向指定区块（config 或 show）添加命令。已存在则跳过（幂等）。
+    """向指定区块添加命令。已存在则跳过（幂等）。
 
     Args:
-        section: "config" 或 "show"
+        section: "config"、"show"、"cisco.config" 或 "cisco.show"
         cmd:     要添加的命令字符串
     """
     _validate_section(section)
@@ -159,7 +188,7 @@ def add_command(section: str, cmd: str, path: Path = COMMANDS_FILE) -> None:
     except (FileNotFoundError ,ValueError):
         commands = {s: [] for s in _CMD_SECTIONS}
 
-    cmds: list = commands.setdefault(section, [])
+    cmds = _command_list(commands, section, create=True)
     if cmd in cmds:
         return  # 已存在，幂等
     cmds.append(cmd)
@@ -170,7 +199,7 @@ def remove_command(section: str, cmd: str, path: Path = COMMANDS_FILE) -> None:
     """从指定区块删除命令。命令不存在时抛出 ValueError。"""
     _validate_section(section)
     commands = load_commands(path)
-    cmds: list = commands.get(section, [])
+    cmds = _command_list(commands, section, create=False)
     if cmd not in cmds:
         raise ValueError(f"命令 '{cmd}' 在 {section} 区块中不存在")
     cmds.remove(cmd)
@@ -212,5 +241,5 @@ def _find_device(devices: list, name: str) -> dict:
 
 
 def _validate_section(section: str) -> None:
-    if section not in _CMD_SECTIONS:
-        raise ValueError(f"区块 '{section}' 无效，只支持: {_CMD_SECTIONS}")
+    if section not in COMMAND_SECTIONS:
+        raise ValueError(f"区块 '{section}' 无效，只支持: {COMMAND_SECTIONS}")

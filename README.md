@@ -149,11 +149,11 @@ diff [--source yaml|excel]           Generate HTML config diff report
 inspect [--workers N] [--source ...] Inspect all devices, generate HTML + Excel
 device list                          List all devices
 device add                           Add device interactively
-device update <name> <field> [val]   Modify a field (password is prompted and not echoed)
+device update <name> <field> [val]   Modify a field (password: press Enter to cancel; q is a valid password)
 device remove <name>                 Remove a device
 command list                         List all commands
-command add config/show <cmd>        Add a Huawei config / show command
-command remove config/show <cmd>     Remove a Huawei command
+command add <section> <cmd>          config/show = Huawei; cisco.config / cisco.show = Cisco
+command remove <section> <cmd>       Remove a command from those same sections
 ```
 
 > `--source excel --source-file devices.xlsx` loads devices from Excel (header: name | ip | port | device_type | username | password). Default loads from `devices.yaml`. `devices.xlsx` contains passwords and is listed in `.gitignore`.

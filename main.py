@@ -11,6 +11,7 @@ from config.manager import (
     load_devices, load_commands,
     add_device, update_device, remove_device, list_devices,
     add_command, remove_command, list_commands,
+    COMMAND_SECTIONS,
 )
 
 
@@ -141,11 +142,10 @@ def cmd_device(args, logger):
         if field == "password":
             if value is not None:
                 logger.warning("命令行密码已忽略，请在提示中输入")
-            value = getpass.getpass("密码（输入 q 取消）: ").strip()
-            if value.lower() == "q":
-                print("取消操作")
-                return
+            value = getpass.getpass("密码（直接回车取消）: ").strip()
+            # 空输入取消。q 去掉首尾空格后是合法密码，会写入。
             if not value:
+                print("取消操作")
                 print("密码不能为空")
                 return
         else:
@@ -194,9 +194,9 @@ def cmd_command(args, logger):
         except (FileNotFoundError, ValueError) as e:
             logger.error(str(e))
             return
-        for section in ("config", "show"):
+        for section in COMMAND_SECTIONS:
             print(f"\n[{section}]")
-            items = cmds.get(section, [])
+            items = _items_for_command_section(cmds, section)
             if items:
                 for i, c in enumerate(items, 1):
                     print(f"  {i}. {c}")
@@ -220,6 +220,19 @@ def cmd_command(args, logger):
             logger.info(f"命令 '{cmd}' 已从 [{section}] 区块移除")
         except Exception as e:
             logger.error(str(e))
+
+
+def _items_for_command_section(cmds: dict, section: str) -> list:
+    """command list 用：顶层区块直接取，Cisco 区块从 cisco 子字典取。"""
+    if section in ("config", "show"):
+        items = cmds.get(section) or []
+        return items if isinstance(items, list) else []
+    cisco = cmds.get("cisco")
+    if not isinstance(cisco, dict):
+        return []
+    kind = "config" if section == "cisco.config" else "show"
+    items = cisco.get(kind) or []
+    return items if isinstance(items, list) else []
 
 
 def _prompt_device_entry() -> dict | None:
@@ -253,10 +266,8 @@ def _prompt_device_entry() -> dict | None:
     username = ask("用户名", "admin")
     if username is None:
         return None
-    # 密码不回显；输入 q 取消，空密码拒绝
-    password = getpass.getpass("  密码: ")
-    if password.strip().lower() == "q":
-        return None
+    # 密码不回显。直接回车是空密码，拒绝。q 去掉首尾空格后原样保存。
+    password = getpass.getpass("  密码（直接回车取消）: ")
     if not password.strip():
         print("  密码不能为空")
         return None
@@ -401,10 +412,10 @@ def main():
     cmd_sub = cmd_parser.add_subparsers(dest="action", help="操作")
     cmd_sub.add_parser("list", help="列出所有命令")
     cmd_add = cmd_sub.add_parser("add", help="添加一条命令")
-    cmd_add.add_argument("section", choices=["config", "show"], help="目标区块")
+    cmd_add.add_argument("section", choices=list(COMMAND_SECTIONS), help="目标区块")
     cmd_add.add_argument("cmd", help="命令字符串，如 'dis cpu-usage'")
     cmd_rm = cmd_sub.add_parser("remove", help="删除一条命令")
-    cmd_rm.add_argument("section", choices=["config", "show"], help="目标区块")
+    cmd_rm.add_argument("section", choices=list(COMMAND_SECTIONS), help="目标区块")
     cmd_rm.add_argument("cmd", help="命令字符串")
 
     args = parser.parse_args()

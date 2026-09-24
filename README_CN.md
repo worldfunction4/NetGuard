@@ -149,11 +149,11 @@ diff [--source yaml|excel]           生成 HTML 配置差异报告
 inspect [--workers N] [--source ...] 巡检所有设备，生成 HTML + Excel
 device list                          列出所有设备
 device add                           交互式添加设备
-device update <名> <字段> [值]       修改设备字段（password 在提示中输入，不回显）
+device update <名> <字段> [值]       修改设备字段（密码直接回车取消，q 可以作为密码）
 device remove <名>                    删除设备
 command list                         列出所有命令
-command add config/show <命令>        添加华为配置 / 查看命令
-command remove config/show <命令>     删除华为命令
+command add <区块> <命令>            config/show 为华为，cisco.config / cisco.show 为 Cisco
+command remove <区块> <命令>         从上述区块删除命令
 ```
 
 > `--source excel --source-file devices.xlsx` 可从 Excel 加载设备列表（首行：name | ip | port | device_type | username | password），默认从 `devices.yaml` 加载。`devices.xlsx` 含密码，已加入 `.gitignore`。
