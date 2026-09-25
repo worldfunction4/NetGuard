@@ -14,7 +14,8 @@
 | 阈值告警 | 超阈值自动记录日志，可选钉钉 Webhook 推送 |
 | 多云集成 | 阿里云 OSS 备份同步（可选）。只上传本次 `run` 新保存的文件，无凭据时静默跳过 |
 | 自动重连 | 超时和 `OSError` 最多重试 5 次。认证失败、非法设备类型等配置错误不重试 |
-| Mock 演示 | `NETGUARD_MOCK=1` 无设备也能完整演示 |
+| Mock 演示 | `NETGUARD_MOCK=1` 不连接真实设备。设备清单里仍要有至少一台设备 |
+| Web 接口 | FastAPI 提供设备列表、备份、对比、巡检和报告文件名。浏览器打开 `/docs` |
 
 ## 快速开始
 
@@ -158,23 +159,49 @@ command remove <区块> <命令>         从上述区块删除命令
 
 > `--source excel --source-file devices.xlsx` 可从 Excel 加载设备列表（首行：name | ip | port | device_type | username | password），默认从 `devices.yaml` 加载。`devices.xlsx` 含密码，已加入 `.gitignore`。
 >
-> `commands.yaml` 顶层 `config` / `show` 只下发给华为设备。Cisco 使用同文件中的 `cisco` 节。`diff` 和 `inspect` 不读取命令表。任一设备失败时，`run` 的退出码为 1。
+> `commands.yaml` 顶层 `config` / `show` 只下发给华为设备。Cisco 使用同文件中的 `cisco` 节。`diff` 和 `inspect` 不读取命令表。任一设备失败时，`run` 的退出码为 1。设备清单不合法时，命令行只记日志并返回；Web 接口在连接前返回 400。
+
+## Web 接口
+
+备份、对比、巡检的编排在 `operations.py`。命令行和接口调用同一批函数。
+
+```powershell
+$env:NETGUARD_MOCK = "1"
+.\.venv\Scripts\python.exe -m uvicorn api.app:app --port 8000
+```
+
+浏览器打开 http://127.0.0.1:8000/docs ，在页面上直接调用接口。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/devices` | 列出设备，响应不含密码 |
+| POST | `/devices` | 添加一台设备 |
+| POST | `/jobs/backup` | 执行备份 |
+| POST | `/jobs/diff` | 生成差异报告 |
+| POST | `/jobs/inspect` | 执行巡检 |
+| GET | `/reports` | 列出已生成的 HTML 文件名 |
+
+错误正文统一为 `{"error": {"code": "...", "message": "..."}}`。看完后在运行服务的窗口按 `Ctrl+C` 停止。
 
 ## Mock 模式
 
-设置环境变量 `NETGUARD_MOCK=1` 即可在**无任何网络设备**的情况下跑通全流程。MockDriver 返回模拟的华为 / Cisco 设备输出，CPU / 内存数据有随机波动，巡检报告、差异报告都能正常生成。
+设置环境变量 `NETGUARD_MOCK=1` 后，不连接真实设备也能跑通备份、对比和巡检。`devices.yaml` 不能是空文件，至少要有一台设备；可以先复制 `devices.example.yaml`。MockDriver 返回模拟的华为 / Cisco 输出，CPU / 内存数据有随机波动。
 
 ```powershell
 # PowerShell
 $env:NETGUARD_MOCK = "1"
-python main.py run && python main.py diff && python main.py inspect
+python main.py run
+python main.py diff
+python main.py inspect
 start reports\           # 在资源管理器打开报告目录
 ```
 
 ```cmd
 REM CMD
 set NETGUARD_MOCK=1
-python main.py run && python main.py diff && python main.py inspect
+python main.py run
+python main.py diff
+python main.py inspect
 start reports\
 ```
 
@@ -206,7 +233,13 @@ start reports\
 ```
 NetGuard/
 ├── main.py                # CLI 入口，argparse 命令分发
+├── operations.py          # 备份、对比、巡检编排，CLI 与 API 共用
 ├── logger.py              # 日志模块（控制台 + 文件双输出）
+├── api/
+│   ├── app.py             # FastAPI 应用与统一错误格式
+│   ├── devices.py         # 设备列表接口
+│   ├── jobs.py            # 备份、巡检、对比、报告列表
+│   └── schemas.py         # 请求和响应字段
 ├── devices/
 │   ├── base.py            # BaseDriver 抽象基类 + get_driver 工厂
 │   ├── huawei.py          # 华为 VRP 驱动
@@ -232,7 +265,7 @@ NetGuard/
 │   └── manager.py           # 设备和命令的 YAML 配置管理
 ├── src/
 │   └── excel_reader.py      # Excel 设备列表读取（--source excel 时使用）
-├── tests/                 # 109 项 pytest 单元测试
+├── tests/                 # 150 项 pytest 单元测试
 ├── commands.yaml          # 华为命令在顶层，Cisco 命令在 cisco 节
 ├── devices.example.yaml   # 设备列表示例
 ├── .env.example           # 环境变量配置示例（钉钉/OSS/Mock）
@@ -243,7 +276,7 @@ NetGuard/
 
 ```
 Python · Netmiko · difflib · Jinja2 · openpyxl · oss2 · requests
-argparse · ThreadPoolExecutor · pytest · PyYAML
+FastAPI · Uvicorn · argparse · ThreadPoolExecutor · pytest · PyYAML
 ```
 
 ## 异常处理层次
@@ -267,6 +300,8 @@ TCP 可达性探测（socket.create_connection）
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
+| 2026-09-25 | — | 新增 FastAPI 接口；备份、对比、巡检抽到 `operations.py`；设备清单不合法时，任务在连接前失败 |
+| 2026-09-24 | — | `command` 可管理 Cisco 命令；密码 `q` 可以作为真实密码保存 |
 | 2026-09-24 | — | 修复华为巡检缺少 `re`、密码写入日志；配置失败时 `run` 退出码为 1；Cisco 不再接收华为命令；OSS 只上传本次新文件 |
 | 2026-06-01 | v1.3 | 新增CLI命令，修复代码冗余问题 |
 | 2026-05-27 | v1.2 | 新增 `.env.example` 环境变量文档；统一 README Shell 语法为 PowerShell |

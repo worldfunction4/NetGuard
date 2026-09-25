@@ -14,7 +14,8 @@ A batch network device management tool for SMBs, addressing three pain points: *
 | Threshold Alerts | Auto-log when thresholds exceeded; optional DingTalk Webhook push |
 | Multi-Cloud Integration | Alibaba Cloud OSS backup sync (optional). Uploads only files saved by this `run`; skipped silently without credentials |
 | Auto-Retry | Timeouts and `OSError` retry up to 5 times. Auth failures and config errors (such as an invalid device type) are not retried |
-| Mock Demo | `NETGUARD_MOCK=1` enables full demo without real devices |
+| Mock Demo | `NETGUARD_MOCK=1` skips real devices. The device list must still contain at least one entry |
+| Web API | FastAPI exposes devices, backup, diff, inspection, and report filenames. Open `/docs` in a browser |
 
 ## Quick Start
 
@@ -158,23 +159,49 @@ command remove <section> <cmd>       Remove a command from those same sections
 
 > `--source excel --source-file devices.xlsx` loads devices from Excel (header: name | ip | port | device_type | username | password). Default loads from `devices.yaml`. `devices.xlsx` contains passwords and is listed in `.gitignore`.
 >
-> Top-level `config` / `show` in `commands.yaml` are sent only to Huawei devices. Cisco devices use the `cisco` section in the same file. `diff` and `inspect` do not read the command file. If any device fails, `run` exits with code 1.
+> Top-level `config` / `show` in `commands.yaml` are sent only to Huawei devices. Cisco devices use the `cisco` section in the same file. `diff` and `inspect` do not read the command file. If any device fails, `run` exits with code 1. An invalid device list is logged and the CLI returns; the Web API responds with 400 before connecting.
+
+## Web API
+
+Backup, diff, and inspection are orchestrated in `operations.py`. The CLI and the API call the same functions.
+
+```powershell
+$env:NETGUARD_MOCK = "1"
+.\.venv\Scripts\python.exe -m uvicorn api.app:app --port 8000
+```
+
+Open http://127.0.0.1:8000/docs and call the endpoints from that page.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/devices` | List devices. The response has no passwords |
+| POST | `/devices` | Add one device |
+| POST | `/jobs/backup` | Run backup |
+| POST | `/jobs/diff` | Generate diff reports |
+| POST | `/jobs/inspect` | Run inspection |
+| GET | `/reports` | List generated HTML filenames |
+
+Errors use `{"error": {"code": "...", "message": "..."}}`. Press `Ctrl+C` in the server window when finished.
 
 ## Mock Mode
 
-Set `NETGUARD_MOCK=1` to run the full workflow **without any network devices**. MockDriver returns simulated Huawei/Cisco device output with randomized CPU/Memory data, and all inspection and diff reports generate normally.
+Set `NETGUARD_MOCK=1` to run backup, diff, and inspection without connecting to real devices. `devices.yaml` must still list at least one device; copy `devices.example.yaml` first. MockDriver returns simulated Huawei/Cisco output, and CPU/memory values vary slightly.
 
 ```powershell
 # PowerShell
 $env:NETGUARD_MOCK = "1"
-python main.py run && python main.py diff && python main.py inspect
+python main.py run
+python main.py diff
+python main.py inspect
 start reports\           # Open reports directory in Explorer
 ```
 
 ```cmd
 REM CMD
 set NETGUARD_MOCK=1
-python main.py run && python main.py diff && python main.py inspect
+python main.py run
+python main.py diff
+python main.py inspect
 start reports\
 ```
 
@@ -206,7 +233,13 @@ To add a new vendor, just inherit `BaseDriver` and register a `device_type` bran
 ```
 NetGuard/
 ├── main.py                # CLI entry point, argparse command dispatch
+├── operations.py          # Backup, diff, and inspection orchestration shared by CLI and API
 ├── logger.py              # Logging module (console + file dual output)
+├── api/
+│   ├── app.py             # FastAPI app and the shared error shape
+│   ├── devices.py         # Device list endpoints
+│   ├── jobs.py            # Backup, inspection, diff, and report list
+│   └── schemas.py         # Request and response fields
 ├── devices/
 │   ├── base.py            # BaseDriver abstract class + get_driver factory
 │   ├── huawei.py          # Huawei VRP driver
@@ -232,7 +265,7 @@ NetGuard/
 │   └── manager.py           # YAML config management for devices and commands
 ├── src/
 │   └── excel_reader.py      # Excel device list reader (for --source excel)
-├── tests/                 # 109 pytest unit tests
+├── tests/                 # 150 pytest unit tests
 ├── commands.yaml          # Huawei commands at top level; Cisco commands under cisco
 ├── devices.example.yaml   # Device list example
 ├── .env.example           # Env var configuration example (DingTalk/OSS/Mock)
@@ -243,7 +276,7 @@ NetGuard/
 
 ```
 Python · Netmiko · difflib · Jinja2 · openpyxl · oss2 · requests
-argparse · ThreadPoolExecutor · pytest · PyYAML
+FastAPI · Uvicorn · argparse · ThreadPoolExecutor · pytest · PyYAML
 ```
 
 ## Exception Handling Layers
@@ -267,6 +300,8 @@ Business layer
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-09-25 | — | Added the FastAPI surface; moved backup, diff, and inspection into `operations.py`; invalid device lists fail before any connection |
+| 2026-09-24 | — | `command` can manage Cisco commands; the password `q` is stored as a real password |
 | 2026-09-24 | — | Fixed missing `re` in Huawei inspection and passwords written to logs; `run` exits 1 when config push fails; Cisco devices no longer receive Huawei commands; OSS uploads only new files from this run |
 | 2026-06-01 | v1.3 | New CLI commands; fixed code redundancy issues |
 | 2026-05-27 | v1.2 | Added `.env.example` env var docs; unified README shell syntax to PowerShell |
