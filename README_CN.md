@@ -47,6 +47,20 @@ python main.py run          # 模拟备份
 python main.py diff         # 生成差异报告
 python main.py inspect      # 执行巡检
 ```
+
+Linux 或 macOS 用下面这组命令。虚拟环境路径和复制文件的命令不同，后面的 `python main.py` 一样。
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp devices.example.yaml devices.yaml
+export NETGUARD_MOCK=1
+python main.py run
+python main.py diff
+python main.py inspect
+```
+
 ### 安装为 CLI 命令
 
 ```powershell
@@ -60,7 +74,14 @@ pip install -e .
 netguard --help
 ```
 
-> 安装完成后，`netguard` 可以替代 `python main.py`，示例：`netguard run`。
+```bash
+# Linux / macOS
+source .venv/bin/activate
+pip install -e .
+netguard --help
+```
+
+> 安装完成后，`netguard` 可以替代 `python main.py`，示例：`netguard run`。退出虚拟环境都是 `deactivate`。Linux 上删除虚拟环境用 `rm -rf .venv`。
 
 ### 卸载
 
@@ -170,6 +191,12 @@ $env:NETGUARD_MOCK = "1"
 .\.venv\Scripts\python.exe -m uvicorn api.app:app --port 8000
 ```
 
+```bash
+# Linux / macOS
+export NETGUARD_MOCK=1
+.venv/bin/python -m uvicorn api.app:app --port 8000
+```
+
 浏览器打开 http://127.0.0.1:8000/docs ，在页面上直接调用接口。
 
 | 方法 | 路径 | 说明 |
@@ -203,6 +230,15 @@ python main.py run
 python main.py diff
 python main.py inspect
 start reports\
+```
+
+```bash
+# Linux / macOS
+export NETGUARD_MOCK=1
+python main.py run
+python main.py diff
+python main.py inspect
+# 报告在 reports/ 目录，用浏览器打开其中的 .html 文件
 ```
 
 > 也可以复制 `.env.example` 为 `.env`，将 `NETGUARD_MOCK=1` 写入其中，省去每次手动设置环境变量。

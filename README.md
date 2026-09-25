@@ -48,6 +48,19 @@ python main.py diff         # Generate diff report
 python main.py inspect      # Run inspection
 ```
 
+On Linux or macOS, the virtualenv path and the copy command differ. The `python main.py` commands stay the same.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp devices.example.yaml devices.yaml
+export NETGUARD_MOCK=1
+python main.py run
+python main.py diff
+python main.py inspect
+```
+
 ### Install as CLI Command
 
 ```powershell
@@ -61,7 +74,14 @@ pip install -e .
 netguard --help
 ```
 
-> After installation, `netguard` replaces `python main.py`, e.g.: `netguard run`.
+```bash
+# Linux / macOS
+source .venv/bin/activate
+pip install -e .
+netguard --help
+```
+
+> After installation, `netguard` replaces `python main.py`, e.g.: `netguard run`. Leave the virtual environment with `deactivate` on either system. On Linux, remove it with `rm -rf .venv`.
 
 ### Uninstall
 
@@ -170,6 +190,12 @@ $env:NETGUARD_MOCK = "1"
 .\.venv\Scripts\python.exe -m uvicorn api.app:app --port 8000
 ```
 
+```bash
+# Linux / macOS
+export NETGUARD_MOCK=1
+.venv/bin/python -m uvicorn api.app:app --port 8000
+```
+
 Open http://127.0.0.1:8000/docs and call the endpoints from that page.
 
 | Method | Path | Description |
@@ -203,6 +229,15 @@ python main.py run
 python main.py diff
 python main.py inspect
 start reports\
+```
+
+```bash
+# Linux / macOS
+export NETGUARD_MOCK=1
+python main.py run
+python main.py diff
+python main.py inspect
+# HTML reports are written under reports/; open them in a browser
 ```
 
 > You can also copy `.env.example` to `.env` and add `NETGUARD_MOCK=1` to avoid setting the env var manually each time.
